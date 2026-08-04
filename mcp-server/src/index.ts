@@ -39,6 +39,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction): Pro
   const challenge = `Bearer resource_metadata="${config.publicUrl}/.well-known/oauth-protected-resource"`;
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ') || !jwks) {
+    console.error('AUTH REJECT: no bearer token presented');
     res.set('WWW-Authenticate', challenge).status(401).json({ error: 'unauthorized' });
     return;
   }
@@ -49,11 +50,14 @@ async function requireAuth(req: Request, res: Response, next: NextFunction): Pro
     });
     const oid = String(payload.oid ?? '');
     if (config.entra.allowedObjectIds.length && !config.entra.allowedObjectIds.includes(oid)) {
+      console.error(`AUTH REJECT: oid ${oid} not in allowlist [${config.entra.allowedObjectIds.join(',')}]`);
       res.status(403).json({ error: 'forbidden: user not allowlisted' });
       return;
     }
+    console.log(`AUTH OK: oid ${oid}`);
     next();
   } catch (e) {
+    console.error(`AUTH REJECT: token validation failed: ${(e as Error).message}`);
     res.set('WWW-Authenticate', challenge).status(401).json({ error: 'invalid_token' });
   }
 }
