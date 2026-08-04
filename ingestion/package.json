@@ -1,0 +1,32 @@
+{
+  "name": "ingestion",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "ddl": "tsx src/generate-ddl.ts",
+    "probe": "tsx src/probe.ts",
+    "backfill": "tsx src/backfill.ts",
+    "sync:nightly": "tsx src/sync.ts --mode nightly",
+    "sync:gameday": "tsx src/sync.ts --mode gameday",
+    "typecheck": "tsc --noEmit",
+    "embed": "tsx src/embed.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "mssql": "^12.7.0"
+  },
+  "devDependencies": {
+    "@types/mssql": "^12.3.0",
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true
+  }
+}

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NFL Warehouse — Dashboard Preview (sample data)</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c1611;--card:#111f18;--edge:#24352b;--chalk:#eef2ea;--dim:#9fb0a2;--yellow:#ffd427;--blue:#4d8dff;--green:#7ed49a}
+*{box-sizing:border-box;margin:0}
+body{background:#0c1611;color:var(--chalk);font-family:Inter,system-ui,sans-serif;font-size:14px;padding:24px}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-family:Oswald;text-transform:uppercase;letter-spacing:.06em;font-size:26px}
+.sub{color:var(--dim);font-size:13px;margin:4px 0 18px}
+.sub b{color:var(--yellow)}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+select,input{background:var(--card);border:1px solid var(--edge);color:var(--chalk);border-radius:6px;padding:7px 10px;font:inherit}
+.seg{display:flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
+.seg button{background:var(--card);border:0;color:var(--dim);padding:7px 13px;font:inherit;cursor:pointer}
+.seg button.on{background:#1c3226;color:var(--green)}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--edge);border-radius:8px;overflow:hidden}
+th,td{padding:9px 12px;text-align:right;border-top:1px solid var(--edge)}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+th{font-family:'IBM Plex Mono';font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);cursor:pointer;user-select:none;background:#0e1a14;border-top:0;white-space:nowrap}
+th.on{color:var(--yellow)}
+td{font-variant-numeric:tabular-nums}
+tr:hover td{background:#15251c}
+.pos{font-family:'IBM Plex Mono';font-size:11px;color:var(--blue)}
+.bar{display:inline-block;height:6px;background:var(--yellow);border-radius:3px;vertical-align:middle;margin-right:6px}
+.note{color:var(--dim);font-size:12px;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Fantasy Season Explorer</h1>
+  <div class="sub">Dashboard interface preview on <b>fabricated sample data</b> — the production version runs these exact interactions against <span style="font-family:'IBM Plex Mono'">v_player_fantasy_season</span> via the API layer. Click any header to sort.</div>
+  <div class="controls">
+    <input id="search" placeholder="Search player…">
+    <select id="pos"><option value="">All positions</option><option>QB</option><option>RB</option><option>WR</option><option>PK</option><option>LB</option><option>P</option></select>
+    <div class="seg" id="fmt">
+      <button data-f="std">Standard</button><button data-f="half">Half PPR</button><button class="on" data-f="ppr">Full PPR</button>
+    </div>
+  </div>
+  <table>
+    <thead><tr id="head"></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+  <div class="note">Consistency = per-game standard deviation (lower = steadier). Floor/Ceiling = worst/best PPR game. In production: any column in any view is sortable, seasons compare side-by-side, and the same queries back the MCP tools.</div>
+</div>
+<script>
+const DATA=[
+ {n:"Lamar Jackson",pos:"QB",g:17,std:401.2,half:401.2,ppr:401.2,pg:23.6,sd:6.8,fl:11.2,ce:35.4},
+ {n:"Patrick Mahomes",pos:"QB",g:17,std:388.5,half:388.5,ppr:388.5,pg:22.9,sd:5.9,fl:13.1,ce:33.8},
+ {n:"Jayden Daniels",pos:"QB",g:17,std:352.7,half:352.7,ppr:352.7,pg:20.7,sd:7.4,fl:8.9,ce:34.2},
+ {n:"Derrick Henry",pos:"RB",g:17,std:248.3,half:271.8,ppr:295.3,pg:17.4,sd:8.1,fl:5.2,ce:31.7},
+ {n:"James Conner",pos:"RB",g:17,std:206.9,half:228.4,ppr:249.9,pg:14.7,sd:7.2,fl:4.8,ce:27.3},
+ {n:"Amon-Ra St. Brown",pos:"WR",g:17,std:198.4,half:252.9,ppr:307.4,pg:18.1,sd:6.3,fl:7.7,ce:29.9},
+ {n:"Jaylen Waddle",pos:"WR",g:17,std:162.1,half:203.6,ppr:245.1,pg:14.4,sd:8.9,fl:2.1,ce:30.6},
+ {n:"Tutu Atwell",pos:"WR",g:17,std:101.7,half:126.2,ppr:150.7,pg:8.9,sd:9.6,fl:0.4,ce:24.8},
+ {n:"Jake Elliott",pos:"PK",g:17,std:148.0,half:148.0,ppr:148.0,pg:8.7,sd:3.4,fl:3.0,ce:15.0},
+ {n:"T.J. Watt",pos:"LB",g:17,std:112.5,half:112.5,ppr:112.5,pg:6.6,sd:4.1,fl:1.0,ce:14.5},
+ {n:"Braden Mann",pos:"P",g:17,std:0,half:0,ppr:0,pg:0,sd:0,fl:0,ce:0},
+ {n:"Dorian Thompson-Robinson",pos:"QB",g:9,std:98.6,half:98.6,ppr:98.6,pg:11.0,sd:8.8,fl:1.4,ce:24.1},
+];
+const COLS=[["n","Player"],["pos","Pos"],["g","G"],["fp","Fantasy Pts"],["pg","Pts/Game"],["sd","Consistency σ"],["fl","Floor"],["ce","Ceiling"]];
+let sortKey="fp",asc=false,fmt="ppr";
+const head=document.getElementById("head"),body=document.getElementById("body");
+function fp(r){return fmt==="std"?r.std:fmt==="half"?r.half:r.ppr}
+function render(){
+ head.innerHTML=COLS.map(([k,l])=>`<th data-k="${k}" class="${k===sortKey?'on':''}">${l}${k===sortKey?(asc?" ▲":" ▼"):""}</th>`).join("");
+ const s=document.getElementById("search").value.toLowerCase(), p=document.getElementById("pos").value;
+ let rows=DATA.filter(r=>r.n.toLowerCase().includes(s)&&(!p||r.pos===p));
+ const val=r=>sortKey==="fp"?fp(r):r[sortKey];
+ rows.sort((a,b)=>{const x=val(a),y=val(b);return (typeof x==="string"?x.localeCompare(y):x-y)*(asc?1:-1)});
+ const max=Math.max(...DATA.map(fp),1);
+ body.innerHTML=rows.map(r=>`<tr><td>${r.n}</td><td class="pos">${r.pos}</td><td>${r.g}</td>
+  <td><span class="bar" style="width:${Math.round(60*fp(r)/max)}px"></span>${fp(r).toFixed(1)}</td>
+  <td>${r.pg.toFixed(1)}</td><td>${r.sd.toFixed(1)}</td><td>${r.fl.toFixed(1)}</td><td>${r.ce.toFixed(1)}</td></tr>`).join("");
+ head.querySelectorAll("th").forEach(th=>th.onclick=()=>{const k=th.dataset.k;asc=k===sortKey?!asc:false;sortKey=k;render()});
+}
+document.getElementById("search").oninput=render;
+document.getElementById("pos").onchange=render;
+document.querySelectorAll("#fmt button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#fmt button").forEach(x=>x.classList.remove("on"));b.classList.add("on");fmt=b.dataset.f;render()});
+render();
+</script>
+</body>
+</html>

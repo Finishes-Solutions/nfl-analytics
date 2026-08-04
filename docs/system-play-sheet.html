@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NFL Analytics Warehouse — System Play Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --turf:#0c1611;        /* midnight turf */
+  --turf-2:#0f1c15;      /* stripe alternate */
+  --chalk:#eef2ea;       /* chalk white */
+  --chalk-dim:#9fb0a2;   /* faded chalk */
+  --line:#2a3a30;        /* field line */
+  --yellow:#ffd427;      /* first-down: WRITE paths (data advancing) */
+  --blue:#4d8dff;        /* scrimmage: READ paths (consumers) */
+  --red:#ff5d4d;         /* flags / caveats */
+  --card:#111f18;
+  --card-edge:#24352b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:
+    repeating-linear-gradient(180deg, var(--turf) 0 160px, var(--turf-2) 160px 320px);
+  color:var(--chalk);
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:15px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px 80px}
+.mono{font-family:'IBM Plex Mono',monospace}
+h1,h2,.disp{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.06em}
+
+/* score bug hero */
+header{padding:44px 0 8px}
+.scorebug{
+  display:flex;align-items:stretch;border:1px solid var(--card-edge);
+  background:var(--card);border-radius:6px;overflow:hidden;
+}
+.scorebug .team{padding:14px 18px;flex:1}
+.scorebug .team small{display:block;color:var(--chalk-dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+.scorebug .team .name{font-family:'Oswald';font-size:22px;font-weight:600;letter-spacing:.04em}
+.scorebug .vs{display:flex;align-items:center;padding:0 10px;color:var(--chalk-dim);font-family:'Oswald');}
+.scorebug .clock{background:#0a120e;border-left:1px solid var(--card-edge);padding:14px 18px;text-align:right}
+.scorebug .clock .q{color:var(--yellow);font-family:'IBM Plex Mono';font-size:12px}
+.scorebug .clock .t{font-family:'Oswald';font-size:22px;font-weight:600}
+h1{font-size:clamp(34px,7vw,58px);font-weight:700;margin:28px 0 6px;line-height:1.05}
+.sub{color:var(--chalk-dim);max-width:640px;margin-bottom:8px}
+.legend{display:flex;gap:22px;flex-wrap:wrap;margin:22px 0 6px;font-size:12.5px}
+.legend .key{display:flex;align-items:center;gap:8px;color:var(--chalk-dim)}
+.swatch{width:26px;height:0;border-top:3px solid var(--yellow);border-radius:2px}
+.swatch.read{border-top-style:dashed;border-top-color:var(--blue)}
+.swatch.snap{border-top-color:var(--red)}
+
+/* yard-line section headers */
+section{margin-top:64px}
+.yard{
+  display:flex;align-items:center;gap:14px;margin-bottom:22px;
+}
+.yard .num{
+  font-family:'Oswald';font-size:30px;font-weight:600;color:var(--chalk);
+  transform:scaleY(1.15);min-width:52px;
+}
+.yard .rule{flex:1;height:2px;background:var(--line);position:relative}
+.yard .rule::before,.yard .rule::after{
+  content:"";position:absolute;top:-5px;width:2px;height:12px;background:var(--line);
+}
+.yard .rule::before{left:25%}.yard .rule::after{left:75%}
+.yard h2{font-size:15px;letter-spacing:.18em;color:var(--chalk-dim);font-weight:500}
+
+/* drive diagram */
+.drive{position:relative}
+.node{
+  background:var(--card);border:1px solid var(--card-edge);border-radius:8px;
+  padding:16px 18px;position:relative;
+}
+.node .tag{font-family:'IBM Plex Mono';font-size:10.5px;letter-spacing:.12em;color:var(--chalk-dim);text-transform:uppercase}
+.node .title{font-family:'Oswald';font-size:19px;font-weight:600;letter-spacing:.04em;margin:2px 0 6px}
+.node p{color:var(--chalk-dim);font-size:13.5px}
+.node .mono{font-size:12px;color:var(--chalk)}
+.node ul{list-style:none;margin-top:8px}
+.node li{font-size:13px;color:var(--chalk-dim);padding:3px 0;border-top:1px dotted var(--line)}
+.node li b{color:var(--chalk);font-weight:600}
+.node.api{border-left:3px solid var(--chalk-dim)}
+.node.write{border-left:3px solid var(--yellow)}
+.node.db{border-left:3px solid var(--chalk)}
+.node.read{border-left:3px solid var(--blue)}
+
+/* connectors: route arrows */
+.route{display:flex;justify-content:center;padding:2px 0}
+.route svg{display:block}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.split3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:700px){.split,.split3{grid-template-columns:1fr}}
+.pill{
+  display:inline-block;font-family:'IBM Plex Mono';font-size:10.5px;
+  border:1px solid var(--card-edge);border-radius:20px;padding:2px 9px;color:var(--chalk-dim);
+  margin:2px 4px 0 0;
+}
+.pill.y{border-color:var(--yellow);color:var(--yellow)}
+.pill.b{border-color:var(--blue);color:var(--blue)}
+.pill.r{border-color:var(--red);color:var(--red)}
+
+/* tempo cards + budget bars */
+.tempo{background:var(--card);border:1px solid var(--card-edge);border-radius:8px;padding:16px 18px}
+.tempo h3{font-family:'Oswald';font-size:17px;font-weight:600;letter-spacing:.05em}
+.tempo .when{font-family:'IBM Plex Mono';font-size:11px;color:var(--yellow);margin-bottom:8px}
+.tempo p{font-size:13px;color:var(--chalk-dim)}
+.budget{margin-top:12px}
+.budget .row{display:flex;align-items:center;gap:10px;margin-top:6px;font-size:12px}
+.budget .lbl{width:118px;color:var(--chalk-dim);font-family:'IBM Plex Mono';font-size:11px}
+.budget .bar{flex:1;height:10px;background:#0a120e;border-radius:5px;overflow:hidden;border:1px solid var(--card-edge)}
+.budget .fill{height:100%;background:var(--yellow)}
+.budget .val{width:86px;text-align:right;font-family:'IBM Plex Mono';font-size:11px;color:var(--chalk)}
+
+/* depth chart (schema) */
+.unit{margin-top:26px}
+.unit h3{font-family:'Oswald';font-size:14px;letter-spacing:.16em;color:var(--chalk-dim);font-weight:500;margin-bottom:10px;text-transform:uppercase}
+.tables{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px}
+.tbl{
+  background:var(--card);border:1px solid var(--card-edge);border-radius:8px;padding:13px 15px;
+  transition:border-color .15s ease;
+}
+.tbl:hover{border-color:var(--chalk-dim)}
+.tbl .name{font-family:'IBM Plex Mono';font-size:13px;font-weight:600;color:var(--chalk)}
+.tbl .grain{font-size:12px;color:var(--chalk-dim);margin:3px 0 7px}
+.tbl .keys{font-family:'IBM Plex Mono';font-size:10.5px;color:var(--yellow)}
+.tbl .keys.b{color:var(--blue)}
+.tbl .cols{font-size:11.5px;color:var(--chalk-dim);margin-top:6px;border-top:1px dotted var(--line);padding-top:6px}
+
+/* drive chart phases */
+.downs{border:1px solid var(--card-edge);border-radius:8px;overflow:hidden}
+.down{display:flex;gap:14px;padding:14px 16px;background:var(--card);border-top:1px solid var(--card-edge);align-items:baseline}
+.down:first-child{border-top:none}
+.down .dd{font-family:'Oswald';font-size:15px;font-weight:600;min-width:86px;color:var(--yellow);letter-spacing:.05em}
+.down.done .dd{color:var(--chalk-dim)}
+.down .what b{color:var(--chalk)}
+.down .what{font-size:13.5px;color:var(--chalk-dim)}
+.done .what b{color:var(--chalk-dim);text-decoration:line-through;text-decoration-color:var(--line)}
+.status{font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.1em;border-radius:3px;padding:2px 6px;margin-left:8px}
+.status.c{background:#15251c;color:#7ed49a}
+.status.n{background:#251d10;color:var(--yellow)}
+
+/* flags */
+.flags{border:1px solid #3a251f;background:#170f0d;border-radius:8px;padding:16px 18px}
+.flags h3{font-family:'Oswald';font-size:16px;color:var(--red);letter-spacing:.08em;margin-bottom:8px}
+.flags li{font-size:13.5px;color:#cbb6ae;margin:7px 0 0 18px}
+.flags b{color:#f0ddd6}
+footer{margin-top:70px;color:var(--chalk-dim);font-size:12px;font-family:'IBM Plex Mono';text-align:center}
+@media (prefers-reduced-motion: no-preference){
+  .node,.tbl,.tempo{animation:chalk .5s ease both}
+  @keyframes chalk{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="scorebug">
+    <div class="team"><small>Data source</small><div class="name">Balldontlie NFL</div></div>
+    <div class="vs disp">@</div>
+    <div class="team"><small>Your stack</small><div class="name">Azure Warehouse</div></div>
+    <div class="clock"><div class="q">GOAT · 600 req/min</div><div class="t">2002 → LIVE</div></div>
+  </div>
+  <h1>The System<br>Play Sheet</h1>
+  <p class="sub">Every component, flow, cadence, and table in the NFL analytics warehouse — from the API to Claude and the live dashboard. One page, full detail.</p>
+  <div class="legend">
+    <span class="key"><span class="swatch"></span> Write path — data advancing into the warehouse</span>
+    <span class="key"><span class="swatch read"></span> Read path — consumers (never touch the API)</span>
+    <span class="key"><span class="swatch snap"></span> Append-only snapshot — history the API discards</span>
+  </div>
+</header>
+
+<!-- ============ THE DRIVE: FULL ARCHITECTURE ============ -->
+<section id="architecture">
+  <div class="yard"><span class="num">20</span><div class="rule"></div><h2>The Drive — Full Architecture</h2></div>
+
+  <div class="drive">
+    <div class="node api">
+      <div class="tag">External · api.balldontlie.io/nfl/v1</div>
+      <div class="title">BALLDONTLIE NFL API</div>
+      <p>17 endpoints, GOAT tier. The <b>only</b> component your code ever calls externally.</p>
+      <div style="margin-top:8px">
+        <span class="pill">teams</span><span class="pill">players</span><span class="pill">games</span>
+        <span class="pill">stats</span><span class="pill">team_stats</span><span class="pill">season_stats</span>
+        <span class="pill">team_season_stats</span><span class="pill">standings</span>
+        <span class="pill">advanced ×3</span><span class="pill">plays</span><span class="pill">rosters</span>
+        <span class="pill">injuries</span><span class="pill">odds ×2</span><span class="pill">props ×2</span>
+      </div>
+    </div>
+
+    <div class="route"><svg width="60" height="46" viewBox="0 0 60 46"><path d="M30 2 v32" stroke="#ffd427" stroke-width="3"/><path d="M20 30 L30 44 L40 30" fill="none" stroke="#ffd427" stroke-width="3"/></svg></div>
+
+    <div class="node write">
+      <div class="tag">Ingestion · Azure Functions (TypeScript) · rate-limited 550/min</div>
+      <div class="title">Three Tempos, One Client</div>
+      <ul>
+        <li><b>Backfill</b> — one-time, 2002→now, all season types, resumable via <span class="mono">sync_state</span>. Coverage probe first: <span class="mono">coverage_map</span> records what actually exists per endpoint/season before a single bulk request is spent.</li>
+        <li><b>Nightly</b> — timer trigger: current-season games, box scores, aggregates, standings, advanced; daily injury + roster snapshots; active-player sweep.</li>
+        <li><b>Game day</b> — 1–15 min cadence, only for games in a live window (started &lt;6h ago / starting &lt;1h). Scores, box scores, plays tail, odds + props snapshots.</li>
+      </ul>
+      <p style="margin-top:8px">Writes are idempotent: keyed tables via <span class="mono">OPENJSON → MERGE</span>, snapshot tables append-only. Overlapping runs are safe.</p>
+    </div>
+
+    <div class="route"><svg width="60" height="46" viewBox="0 0 60 46"><path d="M30 2 v32" stroke="#ffd427" stroke-width="3"/><path d="M20 30 L30 44 L40 30" fill="none" stroke="#ffd427" stroke-width="3"/></svg></div>
+
+    <div class="node db">
+      <div class="tag">Azure SQL · single database, single-digit GB · schema generated from tables.ts</div>
+      <div class="title">The Warehouse — 20 Tables + Views</div>
+      <ul>
+        <li><b>Raw layer</b> — every API field as a typed column, plus <span class="mono">raw_json</span> verbatim on every row. Nothing the API sends is ever dropped, even undocumented fields.</li>
+        <li><b>Semantic layer (views)</b> — fantasy points (std / half / full PPR, computed not stored), rolling trends, usage share, matchup difficulty, season-over-season deltas. This is what the LLM and dashboard actually query.</li>
+        <li><b>Two principals</b> — <span class="mono">nfl_ingest</span> (read/write, used only by ingestion) and <span class="mono">nfl_readonly</span> (DENY writes — every consumer below).</li>
+      </ul>
+    </div>
+
+    <div class="route"><svg width="180" height="52" viewBox="0 0 180 52"><path d="M90 2 v14 M90 16 H20 M90 16 H160 M20 16 v22 M160 16 v22" stroke="#4d8dff" stroke-width="3" stroke-dasharray="7 6" fill="none"/><path d="M11 34 L20 50 L29 34 M151 34 L160 50 L169 34" fill="none" stroke="#4d8dff" stroke-width="3"/></svg></div>
+
+    <div class="split">
+      <div class="node read">
+        <div class="tag">AI Access · Model Context Protocol</div>
+        <div class="title">Custom MCP Server</div>
+        <p>Runs as <span class="mono">nfl_readonly</span> with row limits + statement timeouts. Two stages:</p>
+        <ul>
+          <li><b>Stage 1</b> — generic SQL MCP (text-to-SQL over the views) to learn what you actually ask.</li>
+          <li><b>Stage 2</b> — curated tools: <span class="mono">get_player_trends</span>, <span class="mono">compare_players</span>, <span class="mono">get_matchup_analysis</span>. No hallucinated joins.</li>
+        </ul>
+        <p style="margin-top:8px">Consumers: <b>Claude</b> (Desktop/app), <b>Copilot Studio</b> (MCP support), any other MCP-capable model.</p>
+      </div>
+      <div class="node read">
+        <div class="tag">Frontend · Azure App Service (no Vercel)</div>
+        <div class="title">Next.js Dashboard</div>
+        <ul>
+          <li><b>API layer</b> — parameterized queries, whitelisted sortable columns. Sort / filter / compare any metric across players, teams, seasons.</li>
+          <li><b>Live feel</b> — v1: client polls your own API every 10–20s. v2: ingestion publishes "game N updated" to <b>Azure SignalR</b>; browsers refetch just that slice.</li>
+          <li><b>Zero API cost</b> — a thousand open dashboards = 0 BALLDONTLIE requests. Freshness is decoupled from the rate limit entirely.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TEMPO & RATE BUDGET ============ -->
+<section id="tempo">
+  <div class="yard"><span class="num">40</span><div class="rule"></div><h2>Tempo — Cadence &amp; Rate Budget</h2></div>
+  <div class="split3">
+    <div class="tempo">
+      <h3>Training Camp</h3><div class="when">BACKFILL · RUN ONCE</div>
+      <p>2002→now, every endpoint, every season type. ~1–2 hours wall clock at 550/min, dominated by plays (~1 paginated fetch per game) and player box scores (~25k rows/season). Checkpointed per season — kill and resume freely.</p>
+    </div>
+    <div class="tempo">
+      <h3>Film Review</h3><div class="when">NIGHTLY · TIMER 06:00 UTC</div>
+      <p>Refresh current season, re-aggregate, snapshot injuries + rosters. A few hundred requests, minutes of runtime. Also the daily archive tick for depth-chart and injury history the API deletes.</p>
+    </div>
+    <div class="tempo">
+      <h3>No-Huddle</h3><div class="when">GAME DAY · EVERY 1–15 MIN</div>
+      <p>Live-window games only. Off-hours runs cost one DB query and zero API calls. Snapshots odds + props every cycle — the unrecoverable data.</p>
+    </div>
+  </div>
+
+  <div class="tempo" style="margin-top:14px">
+    <h3>Worst case: 9-game Sunday window, one full no-huddle cycle</h3>
+    <div class="budget">
+      <div class="row"><span class="lbl">games (scores)</span><div class="bar"><div class="fill" style="width:2%"></div></div><span class="val">~2 req</span></div>
+      <div class="row"><span class="lbl">box scores ×9</span><div class="bar"><div class="fill" style="width:15%"></div></div><span class="val">~18 req</span></div>
+      <div class="row"><span class="lbl">team stats ×9</span><div class="bar"><div class="fill" style="width:8%"></div></div><span class="val">~9 req</span></div>
+      <div class="row"><span class="lbl">plays tail ×9</span><div class="bar"><div class="fill" style="width:23%"></div></div><span class="val">~27 req</span></div>
+      <div class="row"><span class="lbl">props ×9</span><div class="bar"><div class="fill" style="width:8%"></div></div><span class="val">~9 req</span></div>
+      <div class="row"><span class="lbl">odds (week)</span><div class="bar"><div class="fill" style="width:3%"></div></div><span class="val">~3 req</span></div>
+      <div class="row"><span class="lbl" style="color:var(--chalk)">cycle total</span><div class="bar"><div class="fill" style="width:12%;background:var(--blue)"></div></div><span class="val" style="color:var(--chalk)">~68 / 550</span></div>
+    </div>
+    <p style="margin-top:10px">≈12% of budget per cycle → a 1-minute cadence is comfortable, and their upstream refresh is likely the real latency floor anyway. Measure changed-row rate live, then tune down.</p>
+  </div>
+</section>
+
+<!-- ============ DEPTH CHART: SCHEMA ============ -->
+<section id="schema">
+  <div class="yard"><span class="num">50</span><div class="rule"></div><h2>Depth Chart — All 20 Tables</h2></div>
+
+  <div class="unit"><h3>Dimensions · who &amp; where</h3>
+    <div class="tables">
+      <div class="tbl"><div class="name">teams</div><div class="grain">1 row / franchise (32)</div><div class="keys">PK id</div><div class="cols">conference · division · names · abbreviation</div></div>
+      <div class="tbl"><div class="name">players</div><div class="grain">1 row / player, all-time</div><div class="keys">PK id</div><div class="cols">position · height/weight (raw + parsed inches/lbs) · college · experience · age* · is_active</div></div>
+      <div class="tbl"><div class="name">games</div><div class="grain">1 row / game, 2002→now, pre/reg/post</div><div class="keys">PK id · IX season+type+week, date</div><div class="cols">venue · status · full + per-quarter + OT scoring both sides</div></div>
+    </div>
+  </div>
+
+  <div class="unit"><h3>Game facts · every box score</h3>
+    <div class="tables">
+      <div class="tbl"><div class="name">player_game_stats</div><div class="grain">1 row / player / game (~25k per season)</div><div class="keys">PK game_id + player_id</div><div class="cols">~60 cols: passing · rushing · receiving · defense · returns · kicking · punting</div></div>
+      <div class="tbl"><div class="name">team_game_stats</div><div class="grain">2 rows / game</div><div class="keys">PK game_id + team_id</div><div class="cols">downs · efficiency splits · drives · red zone · penalties · possession time</div></div>
+      <div class="tbl"><div class="name">plays</div><div class="grain">1 row / play (~40k per season)</div><div class="keys">PK id (string) · IX game+wallclock</div><div class="cols">full text · down/distance before &amp; after · scoring flag · <b style="color:var(--yellow)">home_win_probability</b></div></div>
+    </div>
+  </div>
+
+  <div class="unit"><h3>Season facts · the trend fuel</h3>
+    <div class="tables">
+      <div class="tbl"><div class="name">player_season_stats</div><div class="grain">1 row / player / season / type</div><div class="keys">PK player+season+type</div><div class="cols">~85 cols incl. per-game rates, first downs, FG distance buckets</div></div>
+      <div class="tbl"><div class="name">team_season_stats</div><div class="grain">1 row / team / season / type</div><div class="keys">PK team+season+type</div><div class="cols"><b style="color:var(--chalk)">190 stat columns</b> — full offense/defense/ST + opp_ mirror of every field</div></div>
+      <div class="tbl"><div class="name">standings</div><div class="grain">1 row / team / season</div><div class="keys">PK team+season</div><div class="cols">records (overall/conf/div/home/road) · streaks · seed · differential</div></div>
+    </div>
+  </div>
+
+  <div class="unit"><h3>Advanced · tracking-era metrics (≈2016+, probe confirms)</h3>
+    <div class="tables">
+      <div class="tbl"><div class="name">adv_passing_stats</div><div class="grain">player / season / week (0 = full season)</div><div class="keys">PK player+season+week+type</div><div class="cols">CPOE · time-to-throw · air yards · aggressiveness</div></div>
+      <div class="tbl"><div class="name">adv_rushing_stats</div><div class="grain">same grain</div><div class="keys">PK player+season+week+type</div><div class="cols">RYOE · efficiency · 8+ defenders % · time to LOS</div></div>
+      <div class="tbl"><div class="name">adv_receiving_stats</div><div class="grain">same grain</div><div class="keys">PK player+season+week+type</div><div class="cols">separation · cushion · YAC over expected · air-yard share</div></div>
+    </div>
+  </div>
+
+  <div class="unit"><h3>Snapshots · append-only, the archive nobody else has</h3>
+    <div class="tables">
+      <div class="tbl"><div class="name">injury_snapshots</div><div class="grain">daily capture / injured player</div><div class="keys b">snapshot_id + captured_at</div><div class="cols">status · comment · date → builds injury timelines the API deletes</div></div>
+      <div class="tbl"><div class="name">roster_snapshots</div><div class="grain">daily capture / roster slot (2025+)</div><div class="keys b">snapshot_id + captured_at</div><div class="cols">depth-chart position + depth → promotion/demotion history</div></div>
+      <div class="tbl"><div class="name">odds_snapshots</div><div class="grain">per poll / vendor / game</div><div class="keys b">snapshot_id + captured_at</div><div class="cols">spread · moneyline · total (raw string + parsed) · 12 vendors incl. Kalshi/Polymarket</div></div>
+      <div class="tbl"><div class="name">odds_opening</div><div class="grain">1 row / vendor / game</div><div class="keys">PK api_odds_id</div><div class="cols">opening lines → closing-line-value analysis</div></div>
+      <div class="tbl"><div class="name">prop_snapshots</div><div class="grain">per poll / prop / vendor</div><div class="keys b">snapshot_id + captured_at</div><div class="cols">36 prop types · over/under + milestone markets · <b style="color:var(--red)">LIVE-only upstream</b></div></div>
+      <div class="tbl"><div class="name">prop_opening</div><div class="grain">opening props / recent season</div><div class="keys b">append + dedupe view</div><div class="cols">opening prop lines per game</div></div>
+    </div>
+  </div>
+
+  <div class="unit"><h3>Operations · how the machine knows itself</h3>
+    <div class="tables">
+      <div class="tbl"><div class="name">coverage_map</div><div class="grain">endpoint / season / type</div><div class="keys">PK endpoint+season+type</div><div class="cols">has_data flag — backfill loops only over verified coverage</div></div>
+      <div class="tbl"><div class="name">sync_state</div><div class="grain">1 row / checkpoint scope</div><div class="keys">PK scope</div><div class="cols">watermarks → resumable backfill, safe re-runs</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BUILD PHASES ============ -->
+<section id="phases">
+  <div class="yard"><span class="num">40</span><div class="rule"></div><h2>The Scoring Drive — Build Order</h2></div>
+  <div class="downs">
+    <div class="down done"><span class="dd">1st &amp; 10</span><div class="what"><b>Schema + ingestion foundation</b> — DDL (20 tables), rate-limited client, probe, resumable backfill, nightly/gameday sync.<span class="status c">SHIPPED</span></div></div>
+    <div class="down"><span class="dd">2nd &amp; 4</span><div class="what"><b>Run it</b> — provision Azure SQL, execute DDL, teams → players → games → probe → all. Review coverage_map; expect plays/advanced to floor well after 2002.<span class="status n">NEXT</span></div></div>
+    <div class="down"><span class="dd">3rd &amp; 2</span><div class="what"><b>Views semantic layer</b> — fantasy scoring ×3 formats, rolling trends, usage share, matchup difficulty, regression flags. This is the product the LLM sees.</div></div>
+    <div class="down"><span class="dd">1st &amp; 10</span><div class="what"><b>MCP server</b> — stage 1 generic SQL over views (read-only user), stage 2 curated tools. Connect Claude, then Copilot Studio.</div></div>
+    <div class="down"><span class="dd">2nd &amp; 6</span><div class="what"><b>Dashboard</b> — Next.js on App Service, sortable/filterable everything, own-API polling → SignalR push as the polish pass.</div></div>
+    <div class="down"><span class="dd">RED ZONE</span><div class="what"><b>Projections</b> — the fantasy engine: your own model fed by trends + matchup views, benchmarked against the prop lines you've been archiving since day one.</div></div>
+  </div>
+</section>
+
+<!-- ============ FLAGS ============ -->
+<section id="flags">
+  <div class="yard"><span class="num">RZ</span><div class="rule"></div><h2>Flags on the Field — Honest Caveats</h2></div>
+  <div class="flags">
+    <h3>🚩 Known risks before kickoff</h3>
+    <ul>
+      <li><b>Historical depth is unverified</b> until the probe runs. Advanced stats can't predate tracking (~2016); plays and team stats likely have their own floors. The system is built to respect coverage_map, not the marketing claim.</li>
+      <li><b>The OpenAPI spec is stale</b> — schema here is the union of spec + docs, and raw_json catches whatever neither documents. Expect a field-shape surprise or two on first live contact.</li>
+      <li><b>Props are unrecoverable</b> — no historical props exist upstream. Every game-day cycle you don't run is archive lost forever. Start the snapshot job before you care about the analysis.</li>
+      <li><b>"Live" has an upstream ceiling</b> — your poll can outrun their refresh. Measure before tightening cadence.</li>
+      <li><b>Player age/height/weight are current snapshots</b>, not historical; no birthdate field exists, so per-season age is an approximation.</li>
+      <li><b>Fantasy points &amp; projections don't exist in the API</b> — scoring is computed in views; projections are a build, not an import.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>NFL ANALYTICS WAREHOUSE · PLAY SHEET v1 · SCHEMA GENERATED FROM tables.ts · 2026-08-01</footer>
+</div>
+</body>
+</html>
