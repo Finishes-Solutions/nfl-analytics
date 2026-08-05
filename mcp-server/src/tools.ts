@@ -263,7 +263,7 @@ export function registerTools(server: McpServer): void {
   ------------------------------------------------------------------------ */
   server.tool(
     'search_plays',
-    'Play-by-play rows for a specific game, or for a season+week, with optional filters for scoring plays, down, and play type. Use for "what happened on 4th down", drive reconstruction, and scoring summaries. Requires game_id OR season+week — it will not scan a whole season. Play text is sparse before 2009 and effectively missing for 2005. For conceptual searches ("plays like...") use semantic_search instead.',
+    'Play-by-play rows for a specific game, or for a season+week, with optional filters for scoring plays, down, and play type. Each row carries play_no, a monotonic within-game index — use it for sequence questions ("three plays before X"): find the target play_no, then request offset = play_no - 4. Page a full game (~170 plays) with top_n and offset. Requires game_id OR season+week. Play text is sparse before 2009 and effectively missing for 2005. For conceptual searches ("plays like...") use semantic_search instead.',
     {
       game_id: z.number().int().optional().describe('From get_games. Preferred — most precise.'),
       season: z.number().int().min(2002).optional(),
@@ -276,7 +276,7 @@ export function registerTools(server: McpServer): void {
         .describe('Exact play type, e.g. "Passing Touchdown", "Field Goal Good", "Sack"'),
       top_n: z.number().int().min(1).max(200).default(60),
       offset: z.number().int().min(0).default(0)
-        .describe('Skip this many rows — use with top_n to page through a full game (~170 plays).'),
+        .describe('Skip this many rows — use with top_n to page through a full game.'),
     },
     async ({ game_id, season, week, season_type, team_id, scoring_only, down, type_text, top_n, offset }) => {
       if (!game_id && !(season && week)) {
@@ -312,6 +312,9 @@ export function registerTools(server: McpServer): void {
           down: down ?? null, ptype: type_text ?? null,
         }
       );
+      return rows.length ? json(rows) : jerr('No plays matched. Note: play text is sparse before 2009 and 2005 is effectively empty upstream.');
+    }
+  );
 
   server.tool(
     'semantic_search',
