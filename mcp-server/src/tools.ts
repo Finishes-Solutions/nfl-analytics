@@ -179,7 +179,8 @@ export function registerTools(server: McpServer): void {
     async ({ season, week, team_id, season_type }) => {
       const rows = await q(
         `SELECT TOP (${config.maxRows}) id AS game_id, season, week, season_type, game_date, status, venue,
-                home_team_id, home_team_score, visitor_team_id, visitor_team_score
+                home_team_id, home_team_score, home_team_q1, home_team_q2, home_team_q3, home_team_q4, home_team_ot,
+                visitor_team_id, visitor_team_score, visitor_team_q1, visitor_team_q2, visitor_team_q3, visitor_team_q4, visitor_team_ot
          FROM dbo.games
          WHERE season=@season AND season_type=@st
            AND (@week IS NULL OR week=@week)
