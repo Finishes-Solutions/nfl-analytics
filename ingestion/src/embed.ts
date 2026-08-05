@@ -138,19 +138,50 @@ async function phasePlayerCards() {
 async function phasePlays() {
   const rowsQ = await query<any>(`
     SELECT p.id, p.game_id, p.team_id, p.season, p.text, p.type_text, p.period,
-           p.clock_display, p.home_score, p.away_score
+           p.clock_display, p.home_score, p.away_score, p.season_type, p.week,
+           p.stat_yardage, p.start_down, p.start_distance,
+           ht.full_name AS home_team, vt.full_name AS visitor_team,
+           pt.full_name AS play_team,
+           CASE p.season_type
+             WHEN 1 THEN 'Preseason'
+             WHEN 3 THEN 'Postseason'
+             ELSE 'Regular Season' END AS phase,
+           CASE WHEN p.season_type = 3 THEN
+             CASE p.week
+               WHEN 1 THEN 'Wild Card Round'
+               WHEN 2 THEN 'Divisional Round'
+               WHEN 3 THEN 'Conference Championship'
+               WHEN 5 THEN 'Super Bowl'
+               ELSE 'Playoffs' END
+             ELSE CONCAT('Week ', p.week) END AS round_label
     FROM dbo.plays p
+    JOIN dbo.games g  ON g.id = p.game_id
+    JOIN dbo.teams ht ON ht.id = g.home_team_id
+    JOIN dbo.teams vt ON vt.id = g.visitor_team_id
+    LEFT JOIN dbo.teams pt ON pt.id = p.team_id
     WHERE p.season BETWEEN ${FROM} AND ${TO}
       AND p.scoring_play=1
-      AND p.text IS NOT NULL AND LEN(p.text) > 15
+      AND p.text IS NOT NULL AND p.text <> 'null' AND LEN(p.text) > 15
       ${FORCE ? '' : `AND NOT EXISTS (SELECT 1 FROM dbo.semantic_documents sd
         WHERE sd.doc_type='play' AND sd.doc_key=p.id)`}`);
-  const docs: Doc[] = rowsQ.map((r) => ({
-    doc_type: 'play', doc_key: String(r.id),
-    game_id: r.game_id, team_id: r.team_id, season: r.season,
-    content: `[${r.season} Q${r.period} ${r.clock_display}, ${r.away_score}-${r.home_score}] ${r.type_text}: ${r.text}`,
-  }));
-  log(`plays: ${docs.length} to embed (filtered corpus)`);
+
+  const docs: Doc[] = rowsQ.map((r) => {
+    const yards = r.stat_yardage != null ? `${r.stat_yardage} yards, ` : '';
+    const dd = r.start_down ? `${r.start_down} and ${r.start_distance}, ` : '';
+    const clock = `Q${r.period} ${r.clock_display}`;
+    const final = `${r.visitor_team} ${r.away_score}, ${r.home_team} ${r.home_score}`;
+    const by = r.play_team ? ` Scored by the ${r.play_team}.` : '';
+    return {
+      doc_type: 'play', doc_key: String(r.id),
+      game_id: r.game_id, team_id: r.team_id, season: r.season,
+      content:
+        `${r.season} ${r.phase}, ${r.round_label}. ` +
+        `${r.visitor_team} at ${r.home_team}. ` +
+        `${clock}, score ${final}. ` +
+        `${r.type_text}, ${dd}${yards}${r.text}.${by}`,
+    };
+  });
+  log(`plays: ${docs.length} to embed (enriched, scoring plays only)`);
   await saveDocs(docs);
 }
 
