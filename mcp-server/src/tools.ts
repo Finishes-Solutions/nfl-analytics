@@ -315,7 +315,7 @@ export function registerTools(server: McpServer): void {
       return rows.length ? json(rows) : jerr('No plays matched. Note: play text is sparse before 2009 and 2005 is effectively empty upstream.');
     }
   );
-
+  
   server.tool(
     'semantic_search',
     'Conceptual/similarity/memory search over play descriptions, player profile cards, and injury notes ("games where...", "plays like...", "backs similar to..."). NOT for numeric lookups or counting — use search_plays or the stats tools for those. Returned player_id/game_id keys should be joined back via the stats tools before answering.',
