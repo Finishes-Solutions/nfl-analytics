@@ -274,37 +274,44 @@ export function registerTools(server: McpServer): void {
       down: z.number().int().min(1).max(4).optional(),
       type_text: z.string().max(64).optional()
         .describe('Exact play type, e.g. "Passing Touchdown", "Field Goal Good", "Sack"'),
-      top_n: z.number().int().min(1).max(config.maxRows).default(50),
+      top_n: z.number().int().min(1).max(200).default(60),
+      offset: z.number().int().min(0).default(0)
+        .describe('Skip this many rows — use with top_n to page through a full game (~170 plays).'),
     },
-    async ({ game_id, season, week, season_type, team_id, scoring_only, down, type_text, top_n }) => {
+    async ({ game_id, season, week, season_type, team_id, scoring_only, down, type_text, top_n, offset }) => {
       if (!game_id && !(season && week)) {
         return jerr('Provide game_id, or both season and week. The plays table is too large to scan without one of those.');
       }
       const rows = await q(
-        `SELECT TOP (@n) id AS play_id, game_id, season, week, season_type, team_id,
-                period, clock_display, away_score, home_score, scoring_play,
+        `SELECT play_no, play_id, game_id, season, week, season_type, team_id,
+                period, clock_display, wallclock, away_score, home_score, scoring_play,
                 type_text, start_down, start_distance, start_yards_to_endzone,
-                stat_yardage, home_win_probability,
-                CASE WHEN text = 'null' THEN NULL ELSE text END AS text
-         FROM dbo.plays
-         WHERE (@gid IS NULL OR game_id=@gid)
-           AND (@season IS NULL OR season=@season)
-           AND (@week IS NULL OR week=@week)
-           AND (@gid IS NOT NULL OR season_type=@st)
-           AND (@team IS NULL OR team_id=@team)
+                stat_yardage, home_win_probability, text
+         FROM (
+           SELECT ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY wallclock) AS play_no,
+                  id AS play_id, game_id, season, week, season_type, team_id,
+                  period, clock_display, wallclock, away_score, home_score, scoring_play,
+                  type_text, start_down, start_distance, start_yards_to_endzone,
+                  stat_yardage, home_win_probability,
+                  CASE WHEN text = 'null' THEN NULL ELSE text END AS text
+           FROM dbo.plays
+           WHERE (@gid IS NULL OR game_id=@gid)
+             AND (@season IS NULL OR season=@season)
+             AND (@week IS NULL OR week=@week)
+             AND (@gid IS NOT NULL OR season_type=@st)
+         ) p
+         WHERE (@team IS NULL OR team_id=@team)
            AND (@scoring = 0 OR scoring_play = 1)
            AND (@down IS NULL OR start_down=@down)
            AND (@ptype IS NULL OR type_text=@ptype)
-         ORDER BY game_id, wallclock`,
+         ORDER BY game_id, play_no
+         OFFSET @off ROWS FETCH NEXT @n ROWS ONLY`,
         {
-          n: top_n, gid: game_id ?? null, season: season ?? null, week: week ?? null,
+          n: top_n, off: offset, gid: game_id ?? null, season: season ?? null, week: week ?? null,
           st: season_type, team: team_id ?? null, scoring: scoring_only ? 1 : 0,
           down: down ?? null, ptype: type_text ?? null,
         }
       );
-      return rows.length ? json(rows) : jerr('No plays matched. Note: play text is sparse before 2009 and 2005 is effectively empty upstream.');
-    }
-  );
 
   server.tool(
     'semantic_search',
