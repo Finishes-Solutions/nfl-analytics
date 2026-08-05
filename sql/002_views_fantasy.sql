@@ -95,6 +95,10 @@ GO
 /* ---------------------------------------------------------------------------
    Player fantasy points, per season: totals, per-game average, and the
    consistency profile (stddev + floor/ceiling) that totals hide.
+
+   Stdev is exposed in all three formats so that a standard- or half-PPR
+   leaderboard reports a rate column matching its own scoring. Reporting
+   fp_ppr_stdev next to a standard total is silently wrong (fixed 2026-08-05).
 --------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW dbo.v_player_fantasy_season AS
 SELECT
@@ -111,7 +115,9 @@ SELECT
     CAST(AVG(f.fp_standard) AS DECIMAL(8,2))   AS fp_standard_pg,
     CAST(AVG(f.fp_half_ppr) AS DECIMAL(8,2))   AS fp_half_ppr_pg,
     CAST(AVG(f.fp_ppr)      AS DECIMAL(8,2))   AS fp_ppr_pg,
-    CAST(STDEV(f.fp_ppr)    AS DECIMAL(8,2))   AS fp_ppr_stdev,   -- boom/bust
+    CAST(STDEV(f.fp_standard) AS DECIMAL(8,2)) AS fp_standard_stdev,  -- boom/bust
+    CAST(STDEV(f.fp_half_ppr) AS DECIMAL(8,2)) AS fp_half_ppr_stdev,
+    CAST(STDEV(f.fp_ppr)      AS DECIMAL(8,2)) AS fp_ppr_stdev,
     CAST(MIN(f.fp_ppr)      AS DECIMAL(8,2))   AS fp_ppr_floor,
     CAST(MAX(f.fp_ppr)      AS DECIMAL(8,2))   AS fp_ppr_ceiling
 FROM dbo.v_player_fantasy_game f
