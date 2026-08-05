@@ -50,8 +50,9 @@ export function registerTools(server: McpServer): void {
     async ({ player_id, season, season_type }) => {
       const rows = await q(
         `SELECT f.*, s.passing_completions, s.passing_attempts, s.passing_yards,
-                s.passing_touchdowns, s.passing_interceptions, s.passing_completion_pct,
-                s.qb_rating, s.qbr,
+                s.passing_touchdowns, s.passing_interceptions,
+                CAST(100.0 * s.passing_completions / NULLIF(s.passing_attempts,0) AS DECIMAL(5,2)) AS passing_completion_pct,
+                r.passer_rating, ss.qbr,
                 s.rushing_attempts, s.rushing_yards, s.rushing_touchdowns,
                 s.receptions, s.receiving_targets, s.receiving_yards, s.receiving_touchdowns
          FROM dbo.v_player_fantasy_season f
