@@ -209,3 +209,67 @@ CROSS APPLY (SELECT CASE WHEN f.team_id = g.home_team_id
 JOIN dbo.teams t ON t.id = d.team_id
 GROUP BY d.team_id, t.abbreviation, f.pos, f.season, f.season_type;
 GO
+/* ---------------------------------------------------------------------------
+   Season totals derived from GAMELOGS, not from the season_stats endpoint.
+
+   Why: dbo.player_season_stats is unreliable for passing detail. As of the
+   2002-2026 backfill, passing_interceptions is NULL for roughly two-thirds of
+   qualifying QB seasons (e.g. 4 of 39 populated in 2024), and some populated
+   values are simply wrong (Baker Mayfield 2024 stored as 1 INT; actual 16).
+   dbo.player_game_stats has validated correctly against the public record on
+   every spot-check, so aggregate from there instead.
+
+   Use this view — not player_season_stats — for any season-level passing math.
+--------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW dbo.v_player_season_from_games AS
+SELECT
+    player_id,
+    season,
+    season_type,
+    COUNT(*)                   AS games,
+    SUM(passing_completions)   AS passing_completions,
+    SUM(passing_attempts)      AS passing_attempts,
+    SUM(passing_yards)         AS passing_yards,
+    SUM(passing_touchdowns)    AS passing_touchdowns,
+    SUM(passing_interceptions) AS passing_interceptions,
+    SUM(rushing_attempts)      AS rushing_attempts,
+    SUM(rushing_yards)         AS rushing_yards,
+    SUM(rushing_touchdowns)    AS rushing_touchdowns,
+    SUM(receptions)            AS receptions,
+    SUM(receiving_targets)     AS receiving_targets,
+    SUM(receiving_yards)       AS receiving_yards,
+    SUM(receiving_touchdowns)  AS receiving_touchdowns
+FROM dbo.player_game_stats
+GROUP BY player_id, season, season_type;
+GO
+
+/* ---------------------------------------------------------------------------
+   Traditional NFL passer rating (0-158.3).
+
+   Why: the season_stats endpoint returns qb_rating NULL on all 1,028
+   qualifying seasons. It does return qbr (ESPN Total QBR, 0-100) on 943 of
+   them, but that is a different metric and not interchangeable.
+
+   Four components, each clamped to [0, 2.375], averaged and scaled by 100/6.
+   Reads from v_player_season_from_games for the INT-accuracy reason above.
+
+   Validated: Brady 2009 = 96.17 (actual 96.2), Rodgers 2011 = 122.46 (122.5),
+   Manning 2004 = 121.11 (121.1), Brady 2007 = 117.18 (117.2).
+--------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW dbo.v_qb_passer_rating AS
+SELECT player_id, season, season_type,
+  CAST(((
+    CASE WHEN (1.0*passing_completions/NULLIF(passing_attempts,0) - 0.3)*5 > 2.375 THEN 2.375
+         WHEN (1.0*passing_completions/NULLIF(passing_attempts,0) - 0.3)*5 < 0 THEN 0
+         ELSE (1.0*passing_completions/NULLIF(passing_attempts,0) - 0.3)*5 END +
+    CASE WHEN (1.0*passing_yards/NULLIF(passing_attempts,0) - 3)*0.25 > 2.375 THEN 2.375
+         WHEN (1.0*passing_yards/NULLIF(passing_attempts,0) - 3)*0.25 < 0 THEN 0
+         ELSE (1.0*passing_yards/NULLIF(passing_attempts,0) - 3)*0.25 END +
+    CASE WHEN (1.0*passing_touchdowns/NULLIF(passing_attempts,0))*20 > 2.375 THEN 2.375
+         ELSE (1.0*passing_touchdowns/NULLIF(passing_attempts,0))*20 END +
+    CASE WHEN 2.375 - (1.0*passing_interceptions/NULLIF(passing_attempts,0))*25 < 0 THEN 0
+         ELSE 2.375 - (1.0*passing_interceptions/NULLIF(passing_attempts,0))*25 END
+  ) / 6.0) * 100 AS DECIMAL(6,2)) AS passer_rating
+FROM dbo.v_player_season_from_games
+WHERE passing_attempts > 0;
+GO
