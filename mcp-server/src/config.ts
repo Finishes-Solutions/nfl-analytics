@@ -34,16 +34,31 @@ export const config = {
 let pool: sql.ConnectionPool | undefined;
 export async function getPool(): Promise<sql.ConnectionPool> {
   if (pool?.connected) return pool;
-  pool = await new sql.ConnectionPool({
-    server: config.sql.server,
-    database: config.sql.database,
-    user: config.sql.user,
-    password: config.sql.password,
-    options: { encrypt: true },
-    pool: { max: 4 },
-    requestTimeout: 10_000, // guardrail: 10s statement ceiling
-  }).connect();
-  return pool;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      pool = await new sql.ConnectionPool({
+        server: config.sql.server,
+        database: config.sql.database,
+        user: config.sql.user,
+        password: config.sql.password,
+        options: { encrypt: true },
+        pool: { max: 4 },
+        connectionTimeout: 60_000, // serverless auto-pause resume takes 30-60s
+        requestTimeout: 15_000,    // guardrail: statement ceiling
+      }).connect();
+      if (attempt > 1) console.log('SQL connect succeeded on retry (warehouse was paused)');
+      return pool;
+    } catch (e) {
+      lastErr = e;
+      pool = undefined;
+      console.error(`SQL connect attempt ${attempt} failed: ${(e as Error).message}`);
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
+  throw new Error(
+    `Warehouse unavailable (serverless resume can take up to 60s). Underlying error: ${(lastErr as Error).message}`
+  );
 }
 
 export type Params = Record<string, string | number | null | undefined>;
