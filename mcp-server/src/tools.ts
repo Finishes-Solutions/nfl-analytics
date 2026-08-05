@@ -56,8 +56,12 @@ export function registerTools(server: McpServer): void {
                 s.rushing_attempts, s.rushing_yards, s.rushing_touchdowns,
                 s.receptions, s.receiving_targets, s.receiving_yards, s.receiving_touchdowns
          FROM dbo.v_player_fantasy_season f
-         LEFT JOIN dbo.player_season_stats s
+         LEFT JOIN dbo.v_player_season_from_games s
            ON s.player_id=f.player_id AND s.season=f.season AND s.season_type=f.season_type
+         LEFT JOIN dbo.v_qb_passer_rating r
+           ON r.player_id=f.player_id AND r.season=f.season AND r.season_type=f.season_type
+         LEFT JOIN dbo.player_season_stats ss
+           ON ss.player_id=f.player_id AND ss.season=f.season AND ss.season_type=f.season_type
          WHERE f.player_id=@pid AND f.season=@season AND f.season_type=@st`,
         { pid: player_id, season, st: season_type }
       );
