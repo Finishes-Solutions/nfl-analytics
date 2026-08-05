@@ -104,7 +104,7 @@ async function phasePlayerCards() {
            s.receptions, s.receiving_targets, s.receiving_yards, s.receiving_touchdowns,
            t.full_name AS team_name
     FROM dbo.v_player_fantasy_season f
-    JOIN dbo.player_season_stats s
+    JOIN dbo.v_player_season_from_games s
       ON s.player_id=f.player_id AND s.season=f.season AND s.season_type=f.season_type
     LEFT JOIN dbo.players p ON p.id=f.player_id
     LEFT JOIN dbo.teams t ON t.id=p.team_id
