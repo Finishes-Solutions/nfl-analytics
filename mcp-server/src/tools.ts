@@ -1,7 +1,7 @@
 /**
- * tools.ts — the nine curated tools. Design rules (docs/10):
+ * tools.ts — twelve curated tools. Design rules (docs/10):
  * - Descriptions state when to use AND when not to (Copilot routes on these).
- * - Flat inputs, enums, defaults. All SQL parameterized; sort/metric columns
+ * - Flat inputs, enums, defaults. All SQL parameterized; sort/metric/table names
  *   come from allowlists, never from user strings.
  * - Row caps everywhere; every response includes the IDs needed for follow-ups.
  */
@@ -191,9 +191,123 @@ export function registerTools(server: McpServer): void {
     }
   );
 
+  /* ------------------------------------------------------------------------
+     NEW: advanced (Next Gen Stats style) metrics.
+     Coverage per coverage_map: regular season 2018+, postseason 2021+.
+     week=0 rows are the full-season aggregate; weeks 1..22 are per-week.
+  ------------------------------------------------------------------------ */
+  server.tool(
+    'get_advanced_stats',
+    'Next Gen Stats style advanced metrics for ONE player-season: air yards, time to throw, completion pct above expectation (passing); yards over expected, time to line of scrimmage, eight-defender rate (rushing); separation, cushion, YAC above expectation (receiving). Coverage starts 2018 (regular season) / 2021 (postseason). For conventional box-score numbers use get_player_season instead.',
+    {
+      player_id: z.number().int(),
+      season: z.number().int().min(2018),
+      category: z.enum(['passing', 'rushing', 'receiving']),
+      season_type: seasonType,
+      week: z.number().int().min(0).max(22).default(0)
+        .describe('0 = full-season aggregate (default); 1-22 = a specific week'),
+    },
+    async ({ player_id, season, category, season_type, week }) => {
+      const TABLE: Record<string, string> = {  // allowlist — never user text
+        passing: 'dbo.adv_passing_stats',
+        rushing: 'dbo.adv_rushing_stats',
+        receiving: 'dbo.adv_receiving_stats',
+      };
+      const rows = await q(
+        `SELECT TOP (${config.maxRows}) *
+         FROM ${TABLE[category]}
+         WHERE player_id=@pid AND season=@season AND season_type=@st AND week=@wk`,
+        { pid: player_id, season, st: season_type, wk: week }
+      );
+      return rows.length ? json({ category, rows })
+        : jerr('No advanced stats for that player/season/week. Coverage starts 2018 (regular) / 2021 (postseason); week 0 is the season aggregate.');
+    }
+  );
+
+  /* ------------------------------------------------------------------------
+     NEW: league-wide standings. get_team_season covers ONE team; this covers
+     the whole league, which is what "who had the best record" needs.
+  ------------------------------------------------------------------------ */
+  server.tool(
+    'get_league_standings',
+    'Full league standings for a season: wins, losses, ties, points for/against, point differential, playoff seed, and home/road/division records. Coverage 2004+. Use get_team_season for one team\'s full profile including DST fantasy.',
+    {
+      season: z.number().int().min(2004),
+      conference: z.enum(['AFC', 'NFC']).optional(),
+    },
+    async ({ season, conference }) => {
+      const rows = await q(
+        `SELECT TOP (${config.maxRows}) s.team_id, t.abbreviation, t.full_name,
+                t.conference, t.division,
+                s.wins, s.losses, s.ties, s.overall_record, s.conference_record,
+                s.division_record, s.home_record, s.road_record,
+                s.points_for, s.points_against, s.point_differential,
+                s.win_streak, s.playoff_seed
+         FROM dbo.standings s
+         JOIN dbo.teams t ON t.id = s.team_id
+         WHERE s.season=@season AND (@conf IS NULL OR t.conference=@conf)
+         ORDER BY s.wins DESC, s.point_differential DESC`,
+        { season, conf: conference ?? null }
+      );
+      return rows.length ? json(rows) : jerr('No standings for that season. Coverage starts 2004.');
+    }
+  );
+
+  /* ------------------------------------------------------------------------
+     NEW: play-by-play search. 1.2M rows, so a game_id or season+week is
+     REQUIRED to keep every call on an index.
+     NOTE: dbo.plays has team_id but NO player_id — attribution lives in the
+     text. Play descriptions are unreliable before ~2009 (2005 is effectively
+     empty upstream).
+  ------------------------------------------------------------------------ */
+  server.tool(
+    'search_plays',
+    'Play-by-play rows for a specific game, or for a season+week, with optional filters for scoring plays, down, and play type. Use for "what happened on 4th down", drive reconstruction, and scoring summaries. Requires game_id OR season+week — it will not scan a whole season. Play text is sparse before 2009 and effectively missing for 2005. For conceptual searches ("plays like...") use semantic_search instead.',
+    {
+      game_id: z.number().int().optional().describe('From get_games. Preferred — most precise.'),
+      season: z.number().int().min(2002).optional(),
+      week: z.number().int().min(1).max(22).optional(),
+      season_type: seasonType,
+      team_id: z.number().int().optional(),
+      scoring_only: z.boolean().default(false),
+      down: z.number().int().min(1).max(4).optional(),
+      type_text: z.string().max(64).optional()
+        .describe('Exact play type, e.g. "Passing Touchdown", "Field Goal Good", "Sack"'),
+      top_n: z.number().int().min(1).max(config.maxRows).default(50),
+    },
+    async ({ game_id, season, week, season_type, team_id, scoring_only, down, type_text, top_n }) => {
+      if (!game_id && !(season && week)) {
+        return jerr('Provide game_id, or both season and week. The plays table is too large to scan without one of those.');
+      }
+      const rows = await q(
+        `SELECT TOP (@n) id AS play_id, game_id, season, week, season_type, team_id,
+                period, clock_display, away_score, home_score, scoring_play,
+                type_text, start_down, start_distance, start_yards_to_endzone,
+                stat_yardage, home_win_probability,
+                CASE WHEN text = 'null' THEN NULL ELSE text END AS text
+         FROM dbo.plays
+         WHERE (@gid IS NULL OR game_id=@gid)
+           AND (@season IS NULL OR season=@season)
+           AND (@week IS NULL OR week=@week)
+           AND (@gid IS NOT NULL OR season_type=@st)
+           AND (@team IS NULL OR team_id=@team)
+           AND (@scoring = 0 OR scoring_play = 1)
+           AND (@down IS NULL OR start_down=@down)
+           AND (@ptype IS NULL OR type_text=@ptype)
+         ORDER BY game_id, wallclock`,
+        {
+          n: top_n, gid: game_id ?? null, season: season ?? null, week: week ?? null,
+          st: season_type, team: team_id ?? null, scoring: scoring_only ? 1 : 0,
+          down: down ?? null, ptype: type_text ?? null,
+        }
+      );
+      return rows.length ? json(rows) : jerr('No plays matched. Note: play text is sparse before 2009 and 2005 is effectively empty upstream.');
+    }
+  );
+
   server.tool(
     'semantic_search',
-    'Conceptual/similarity/memory search over play descriptions, player profile cards, and injury notes ("games where...", "plays like...", "backs similar to..."). NOT for numeric lookups — returned player_id/game_id keys should be joined back via the stats tools before answering.',
+    'Conceptual/similarity/memory search over play descriptions, player profile cards, and injury notes ("games where...", "plays like...", "backs similar to..."). NOT for numeric lookups or counting — use search_plays or the stats tools for those. Returned player_id/game_id keys should be joined back via the stats tools before answering.',
     {
       question: z.string().min(3),
       doc_type: z.enum(['play', 'player_card', 'injury', 'game_summary']).optional(),
