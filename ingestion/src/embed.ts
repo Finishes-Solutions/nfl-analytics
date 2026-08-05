@@ -141,7 +141,7 @@ async function phasePlays() {
            p.clock_display, p.home_score, p.away_score
     FROM dbo.plays p
     WHERE p.season BETWEEN ${FROM} AND ${TO}
-      AND (p.scoring_play=1 OR p.start_down IN (3,4))
+      AND p.scoring_play=1
       AND p.text IS NOT NULL AND LEN(p.text) > 15
       ${FORCE ? '' : `AND NOT EXISTS (SELECT 1 FROM dbo.semantic_documents sd
         WHERE sd.doc_type='play' AND sd.doc_key=p.id)`}`);
