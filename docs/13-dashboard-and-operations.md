@@ -110,11 +110,17 @@ triggers it and reads the job log. Nothing leaves GitHub except what the queries
 
 One-time setup (GitHub → Settings → Secrets and variables → Actions):
 
+**This repository is public, so Actions logs are public.** Store everything below as a
+**secret**, including the server name. GitHub masks secrets in logs, but not variables.
+The workflows still accept variables as a fallback. `check` reports print aggregate stats
+into the public log, so don't add check scripts that dump bulk data (for example, the
+odds or props archive).
+
 | Kind | Name | Value |
 |---|---|---|
-| Variable | `AZURE_SQL_RESOURCE_GROUP` | resource group of the SQL server |
-| Variable | `AZURE_SQL_SERVER_NAME` | server name **without** `.database.windows.net` |
-| Variable | `AZURE_SQL_DATABASE` | database name |
+| Secret | `AZURE_SQL_RESOURCE_GROUP` | resource group of the SQL server |
+| Secret | `AZURE_SQL_SERVER_NAME` | server name **without** `.database.windows.net` |
+| Secret | `AZURE_SQL_DATABASE` | database name |
 | Secret | `SQL_READONLY_USER` / `SQL_READONLY_PASSWORD` | `nfl_readonly` login |
 | Secret | `SQL_ADMIN_USER` / `SQL_ADMIN_PASSWORD` | server admin (or a `db_ddladmin` login) |
 
@@ -137,7 +143,7 @@ If ingestion isn't running anywhere yet, this workflow runs it from GitHub:
 - every 15 minutes during Thursday, Sunday and Monday game windows (`--mode gameday`)
 
 To turn it on, add secrets `BDL_API_KEY`, `SQL_INGEST_USER` and `SQL_INGEST_PASSWORD`
-(the `nfl_ingest` login), plus the three `AZURE_SQL_*` variables above. Then set
+(the `nfl_ingest` login), plus the three `AZURE_SQL_*` secrets above. Then set
 variable `ENABLE_SCHEDULED_SYNC=true`. It does nothing until that variable is set, so it
 can't double-write next to an Azure Functions deployment.
 

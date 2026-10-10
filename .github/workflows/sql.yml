@@ -7,6 +7,8 @@
 # App Service deploy unless AZURE_CLIENT_ID is set), opens a firewall rule for
 # this runner's IP only, runs the files, and ALWAYS deletes the rule.
 # Setup: docs/13-dashboard-and-operations.md § "Giving Claude SQL access".
+# PUBLIC REPO: job logs are world-readable. check-mode output (aggregate
+# reports) appears in the log; keep connection details in secrets (masked).
 name: SQL (apply / check)
 
 on:
@@ -37,10 +39,11 @@ jobs:
     env:
       ACTION: ${{ inputs.action }}
       FILES: ${{ inputs.files }}
-      RG: ${{ vars.AZURE_SQL_RESOURCE_GROUP }}
-      SQL_SERVER_NAME: ${{ vars.AZURE_SQL_SERVER_NAME }}
-      SQL_SERVER: ${{ vars.AZURE_SQL_SERVER_NAME }}.database.windows.net
-      SQL_DATABASE: ${{ vars.AZURE_SQL_DATABASE }}
+      RG: ${{ secrets.AZURE_SQL_RESOURCE_GROUP || vars.AZURE_SQL_RESOURCE_GROUP }}
+      # secrets preferred: this repo is public and secrets are masked in logs
+      SQL_SERVER_NAME: ${{ secrets.AZURE_SQL_SERVER_NAME || vars.AZURE_SQL_SERVER_NAME }}
+      SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER_NAME || vars.AZURE_SQL_SERVER_NAME }}.database.windows.net
+      SQL_DATABASE: ${{ secrets.AZURE_SQL_DATABASE || vars.AZURE_SQL_DATABASE }}
       SQL_USER: ${{ inputs.action == 'apply' && secrets.SQL_ADMIN_USER || secrets.SQL_READONLY_USER }}
       SQL_PASSWORD: ${{ inputs.action == 'apply' && secrets.SQL_ADMIN_PASSWORD || secrets.SQL_READONLY_PASSWORD }}
     steps:
@@ -102,3 +105,4 @@ jobs:
           name: sql-output
           path: ${{ runner.temp }}/sql-output.txt
           if-no-files-found: ignore
+          retention-days: 3
