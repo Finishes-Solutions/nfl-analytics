@@ -12,8 +12,12 @@ import { q, embed, config } from './config';
 const seasonType = z.number().int().min(1).max(3).default(2)
   .describe('1=preseason, 2=regular season (default), 3=postseason');
 const fmt = z.enum(['standard', 'half_ppr', 'ppr']).default('ppr');
-const FMT_COL: Record<string, string> = {
-  standard: 'fp_standard_total', half_ppr: 'fp_half_ppr_total', ppr: 'fp_ppr_total',
+// Every rate column must match the format of the total it sits next to —
+// a standard leaderboard reporting PPR per-game/stdev is silently wrong.
+const FMT_COLS: Record<string, { total: string; pg: string; stdev: string }> = {
+  standard: { total: 'fp_standard_total', pg: 'fp_standard_pg', stdev: 'fp_standard_stdev' },
+  half_ppr: { total: 'fp_half_ppr_total', pg: 'fp_half_ppr_pg', stdev: 'fp_half_ppr_stdev' },
+  ppr:      { total: 'fp_ppr_total',      pg: 'fp_ppr_pg',      stdev: 'fp_ppr_stdev' },
 };
 
 const json = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data, null, 1) }] });
@@ -94,18 +98,18 @@ export function registerTools(server: McpServer): void {
     'Aligned season comparison for 2–4 players (fantasy + consistency). Resolve IDs with search_players first. For finding SIMILAR players, use semantic_search instead.',
     {
       player_ids: z.array(z.number().int()).min(2).max(4),
-      season: z.number().int().min(2002), season_type: seasonType,
+      season: z.number().int().min(2002), season_type: seasonType, format: fmt,
     },
-    async ({ player_ids, season, season_type }) => {
+    async ({ player_ids, season, season_type, format }) => {
       const params: Record<string, number> = { season, st: season_type };
       player_ids.forEach((id, i) => (params[`p${i}`] = id));
       const inList = player_ids.map((_, i) => `@p${i}`).join(',');
       const rows = await q(
         `SELECT * FROM dbo.v_player_fantasy_season
          WHERE player_id IN (${inList}) AND season=@season AND season_type=@st
-         ORDER BY fp_ppr_total DESC`, params
+         ORDER BY ${FMT_COLS[format].total} DESC`, params
       );
-      return rows.length >= 2 ? json(rows) : jerr('Fewer than 2 of those players have data for that season.');
+      return rows.length >= 2 ? json({ format, rows }) : jerr('Fewer than 2 of those players have data for that season.');
     }
   );
 
@@ -118,13 +122,13 @@ export function registerTools(server: McpServer): void {
       season_type: seasonType,
     },
     async ({ season, position, format, top_n, season_type }) => {
-      const col = FMT_COL[format]; // allowlist — never user text
+      const c = FMT_COLS[format]; // allowlist — never user text
       const rows = await q(
         `SELECT TOP (@n) player_id, first_name, last_name, pos, games,
-                ${col} AS fantasy_points, fp_ppr_pg, fp_ppr_stdev
+                ${c.total} AS fantasy_points, ${c.pg} AS fantasy_points_pg, ${c.stdev} AS fantasy_points_stdev
          FROM dbo.v_player_fantasy_season
          WHERE season=@season AND season_type=@st AND (@pos IS NULL OR pos=@pos)
-         ORDER BY ${col} DESC`,
+         ORDER BY ${c.total} DESC`,
         { n: top_n, season, st: season_type, pos: position ?? null }
       );
       return json({ format, rows });
@@ -133,21 +137,23 @@ export function registerTools(server: McpServer): void {
 
   server.tool(
     'get_matchup_analysis',
-    'Fantasy points ALLOWED by defenses to a position (matchup difficulty). Use for "best/worst matchup" questions. PPR basis.',
+    'Fantasy points ALLOWED by defenses to a position (matchup difficulty), in the requested scoring format. Use for "best/worst matchup" questions.',
     {
       position: z.string().max(4), season: z.number().int().min(2002),
-      defense_team_id: z.number().int().optional(), season_type: seasonType,
+      defense_team_id: z.number().int().optional(), season_type: seasonType, format: fmt,
     },
-    async ({ position, season, defense_team_id, season_type }) => {
+    async ({ position, season, defense_team_id, season_type, format }) => {
+      const pfx = { standard: 'fp_standard', half_ppr: 'fp_half_ppr', ppr: 'fp_ppr' }[format]; // allowlist
       const rows = await q(
-        `SELECT defense_team_id, defense, pos, games, fp_ppr_allowed_pg, fp_ppr_allowed_total
+        `SELECT defense_team_id, defense, pos, games,
+                ${pfx}_allowed_pg AS fantasy_points_allowed_pg, ${pfx}_allowed_total AS fantasy_points_allowed_total
          FROM dbo.v_fantasy_points_allowed
          WHERE season=@season AND season_type=@st AND pos=@pos
            AND (@def IS NULL OR defense_team_id=@def)
-         ORDER BY fp_ppr_allowed_pg DESC`,
+         ORDER BY ${pfx}_allowed_pg DESC`,
         { season, st: season_type, pos: position, def: defense_team_id ?? null }
       );
-      return rows.length ? json(rows) : jerr('No matchup data for that position/season.');
+      return rows.length ? json({ format, rows }) : jerr('No matchup data for that position/season.');
     }
   );
 
@@ -288,7 +294,7 @@ export function registerTools(server: McpServer): void {
                 type_text, start_down, start_distance, start_yards_to_endzone,
                 stat_yardage, home_win_probability, text
          FROM (
-           SELECT ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY wallclock) AS play_no,
+           SELECT CAST(ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY wallclock, id) AS INT) AS play_no,
                   id AS play_id, game_id, season, week, season_type, team_id,
                   period, clock_display, wallclock, away_score, home_score, scoring_play,
                   type_text, start_down, start_distance, start_yards_to_endzone,

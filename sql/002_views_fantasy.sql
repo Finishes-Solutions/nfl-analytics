@@ -139,9 +139,7 @@ SELECT
     me.week,
     me.season_type,
     opp.team_id                                 AS opponent_team_id,
-    CASE WHEN me.team_id = g.home_team_id
-         THEN ISNULL(g.visitor_team_score, 0)
-         ELSE ISNULL(g.home_team_score, 0) END  AS points_allowed,
+    pa.points_allowed,
     ISNULL(opp.sacks, 0)                        AS sacks,          -- opp QB sacked
     ISNULL(opp.interceptions_thrown, 0)         AS interceptions,
     ISNULL(opp.fumbles_lost, 0)                 AS fumble_recoveries,
@@ -195,7 +193,9 @@ GO
 /* ---------------------------------------------------------------------------
    Fantasy points ALLOWED by each defense, per position — "matchup difficulty",
    the most-asked fantasy question, and the input your projections will need.
-   (PPR basis; swap the column to change format.)
+   All three formats. Rows whose team_id is NULL are excluded: without the
+   player's team we cannot tell which side was the defense (previously these
+   fell through to the home team and were credited to the wrong defense).
 --------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW dbo.v_fantasy_points_allowed AS
 SELECT
@@ -207,12 +207,20 @@ SELECT
     COUNT(DISTINCT f.game_id)                AS games,
     CAST(SUM(f.fp_ppr)  AS DECIMAL(9,2))     AS fp_ppr_allowed_total,
     CAST(SUM(f.fp_ppr) * 1.0
-         / NULLIF(COUNT(DISTINCT f.game_id),0) AS DECIMAL(8,2)) AS fp_ppr_allowed_pg
+         / NULLIF(COUNT(DISTINCT f.game_id),0) AS DECIMAL(8,2)) AS fp_ppr_allowed_pg,
+    CAST(SUM(f.fp_half_ppr) AS DECIMAL(9,2)) AS fp_half_ppr_allowed_total,
+    CAST(SUM(f.fp_half_ppr) * 1.0
+         / NULLIF(COUNT(DISTINCT f.game_id),0) AS DECIMAL(8,2)) AS fp_half_ppr_allowed_pg,
+    CAST(SUM(f.fp_standard) AS DECIMAL(9,2)) AS fp_standard_allowed_total,
+    CAST(SUM(f.fp_standard) * 1.0
+         / NULLIF(COUNT(DISTINCT f.game_id),0) AS DECIMAL(8,2)) AS fp_standard_allowed_pg
 FROM dbo.v_player_fantasy_game f
 JOIN dbo.games g ON g.id = f.game_id
-CROSS APPLY (SELECT CASE WHEN f.team_id = g.home_team_id
-                         THEN g.visitor_team_id ELSE g.home_team_id END AS team_id) d
+CROSS APPLY (SELECT CASE WHEN f.team_id = g.home_team_id THEN g.visitor_team_id
+                         WHEN f.team_id = g.visitor_team_id THEN g.home_team_id
+                    END AS team_id) d
 JOIN dbo.teams t ON t.id = d.team_id
+WHERE f.team_id IS NOT NULL
 GROUP BY d.team_id, t.abbreviation, f.pos, f.season, f.season_type;
 GO
 /* ---------------------------------------------------------------------------

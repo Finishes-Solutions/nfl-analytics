@@ -42,7 +42,8 @@ export async function getPool(): Promise<sql.ConnectionPool> {
         database: config.sql.database,
         user: config.sql.user,
         password: config.sql.password,
-        options: { encrypt: true },
+        // SQL_TRUST_CERT=true only for a local Docker SQL Server (self-signed cert)
+        options: { encrypt: true, trustServerCertificate: process.env.SQL_TRUST_CERT === 'true' },
         pool: { max: 4 },
         connectionTimeout: 60_000, // serverless auto-pause resume takes 30-60s
         requestTimeout: 15_000,    // guardrail: statement ceiling

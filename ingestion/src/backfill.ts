@@ -15,7 +15,7 @@
  * at season granularity instead of starting over.
  */
 import { paginate, get } from './api';
-import { upsertRows, insertRows, query, closePool, toSqlDate } from './db';
+import { upsertRows, insertRows, query, closePool, toSqlDate, ODDS_DEDUPE } from './db';
 import * as T from './tables';
 import * as X from './transform';
 
@@ -223,7 +223,10 @@ async function phaseOdds() {
     const startWeek = season === 2025 ? 8 : 1;
     for (let week = startWeek; week <= 22; week++) {
       for await (const batch of paginate<any>('/nfl/v1/odds', { season, week })) {
-        await insertRows(T.oddsSnapshots, batch.map(X.oddsSnapshotRow));
+        // stamp with the vendor's updated_at, not the backfill time; skip lines
+        // already archived by game-day sync so re-runs don't duplicate history
+        await insertRows(T.oddsSnapshots, batch.map(X.oddsSnapshotRow), new Date(),
+          { capturedAtFrom: 'api_updated_at', dedupe: ODDS_DEDUPE });
       }
     }
     log(`odds snapshots backfilled for ${season}`);

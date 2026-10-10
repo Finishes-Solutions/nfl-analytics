@@ -16,7 +16,8 @@ export async function getPool(): Promise<sql.ConnectionPool> {
     database: config.sql.database,
     user: config.sql.user,
     password: config.sql.password,
-    options: { encrypt: true, trustServerCertificate: false },
+    // SQL_TRUST_CERT=true only for a local Docker SQL Server (self-signed cert)
+    options: { encrypt: true, trustServerCertificate: process.env.SQL_TRUST_CERT === 'true' },
     pool: { max: 4 },
     requestTimeout: 120_000,
   }).connect();
@@ -79,20 +80,57 @@ WHEN NOT MATCHED BY TARGET THEN
   return total;
 }
 
+export interface InsertOptions {
+  /**
+   * Column whose value (when non-null) becomes captured_at instead of the shared
+   * timestamp. Used by historical backfills: odds pulled in 2026 for a 2025 game
+   * must be stamped with the vendor's updated_at, or line-movement history is
+   * collapsed onto the backfill date.
+   */
+  capturedAtFrom?: string;
+  /**
+   * Only insert rows that differ from the latest stored snapshot for the same
+   * key. Game-day sync runs every few minutes; without this every unchanged line
+   * is re-appended each cycle. NULL-safe comparison via INTERSECT.
+   */
+  dedupe?: { keys: string[]; compare: string[] };
+}
+
 /** Append rows into a snapshot table with a shared captured_at. */
 export async function insertRows(
   t: TableSpec,
   rows: Record<string, unknown>[],
-  capturedAt = new Date()
+  capturedAt = new Date(),
+  opts: InsertOptions = {}
 ): Promise<number> {
   if (!rows.length) return 0;
   const cols = effectiveColumns(t).filter((c) => c.name !== 'captured_at');
+  const colNames = new Set(cols.map((c) => c.name));
+  for (const c of [opts.capturedAtFrom, ...(opts.dedupe?.keys ?? []), ...(opts.dedupe?.compare ?? [])]) {
+    if (c && !colNames.has(c)) throw new Error(`${t.name}: unknown column '${c}' in insert options`);
+  }
   const ts = toSqlDate(capturedAt.toISOString());
+  const capturedExpr = opts.capturedAtFrom
+    ? `COALESCE(src.[${opts.capturedAtFrom}], CAST(@captured_at AS DATETIME2(3)))`
+    : '@captured_at';
+  const dedupe = opts.dedupe
+    ? `
+WHERE NOT EXISTS (
+  SELECT 1 FROM (
+    SELECT TOP 1 ${opts.dedupe.compare.map((c) => `l.[${c}]`).join(', ')}
+    FROM dbo.[${t.name}] l
+    WHERE ${opts.dedupe.keys.map((k) => `l.[${k}] = src.[${k}]`).join(' AND ')}
+    ORDER BY l.captured_at DESC
+  ) latest
+  WHERE EXISTS (SELECT ${opts.dedupe.compare.map((c) => `latest.[${c}]`).join(', ')}
+                INTERSECT
+                SELECT ${opts.dedupe.compare.map((c) => `src.[${c}]`).join(', ')}))`
+    : '';
 
   const stmt = `
 INSERT INTO dbo.[${t.name}] (${cols.map((c) => `[${c.name}]`).join(', ')}, [captured_at])
-SELECT ${cols.map((c) => `src.[${c.name}]`).join(', ')}, @captured_at
-FROM OPENJSON(@json) WITH (${withClause(cols)}) AS src;`;
+SELECT ${cols.map((c) => `src.[${c.name}]`).join(', ')}, ${capturedExpr}
+FROM OPENJSON(@json) WITH (${withClause(cols)}) AS src${dedupe};`;
 
   const p = await getPool();
   let total = 0;
@@ -107,6 +145,17 @@ FROM OPENJSON(@json) WITH (${withClause(cols)}) AS src;`;
   }
   return total;
 }
+
+/** Change-only snapshot settings shared by sync (game day) and backfill. */
+export const ODDS_DEDUPE: InsertOptions['dedupe'] = {
+  keys: ['game_id', 'vendor'],
+  compare: ['spread_home_value', 'spread_home_odds', 'spread_away_value', 'spread_away_odds',
+    'moneyline_home_odds', 'moneyline_away_odds', 'total_value', 'total_over_odds', 'total_under_odds'],
+};
+export const PROPS_DEDUPE: InsertOptions['dedupe'] = {
+  keys: ['game_id', 'player_id', 'vendor', 'prop_type', 'market_type'],
+  compare: ['line_value', 'over_odds', 'under_odds', 'milestone_odds'],
+};
 
 export async function query<T = Record<string, unknown>>(text: string): Promise<T[]> {
   const p = await getPool();

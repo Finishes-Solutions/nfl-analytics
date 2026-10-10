@@ -16,7 +16,7 @@
  * append-only snapshots, so overlapping runs are safe.
  */
 import { paginate, get } from './api';
-import { upsertRows, insertRows, query, closePool } from './db';
+import { upsertRows, insertRows, query, closePool, ODDS_DEDUPE, PROPS_DEDUPE } from './db';
 import * as T from './tables';
 import * as X from './transform';
 
@@ -150,13 +150,13 @@ async function gameday() {
     // player props snapshot (LIVE-only data; this is the archive nobody else has)
     try {
       const props = await get<any>('/nfl/v1/odds/player_props', { game_id: g.id });
-      if (props.data?.length) await insertRows(T.propSnapshots, props.data.map(X.propSnapshotRow), now);
+      if (props.data?.length) await insertRows(T.propSnapshots, props.data.map(X.propSnapshotRow), now, { dedupe: PROPS_DEDUPE });
     } catch { /* props vanish near game end; expected */ }
   }
   // odds snapshot for the active weeks
   for (const week of weeks) {
     for await (const batch of paginate<any>('/nfl/v1/odds', { season, week })) {
-      await insertRows(T.oddsSnapshots, batch.map(X.oddsSnapshotRow), now);
+      await insertRows(T.oddsSnapshots, batch.map(X.oddsSnapshotRow), now, { dedupe: ODDS_DEDUPE });
     }
   }
   log('gameday sync complete');

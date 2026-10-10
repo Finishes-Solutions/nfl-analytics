@@ -1,6 +1,6 @@
 /* =============================================================================
    BALLDONTLIE NFL Analytics Warehouse — Azure SQL schema
-   Generated from ingestion/src/tables.ts on 2026-08-01
+   Generated from ingestion/src/tables.ts on 2026-10-10
    Do not edit by hand; edit tables.ts and re-run: npx tsx src/generate-ddl.ts
 
    Conventions:
@@ -878,9 +878,12 @@ GO
    Read-only principal for the MCP server / dashboard API.
    1) In master:   CREATE LOGIN nfl_readonly WITH PASSWORD = '<strong-password>';
    2) In this DB:  run the block below.
+   Do NOT add EXECUTE to the DENY: a database-level DENY EXECUTE overrides the
+   object-level GRANT below and silently breaks semantic_search.
 ---------------------------------------------------------------------------- */
 /*
 CREATE USER nfl_readonly FOR LOGIN nfl_readonly;
 ALTER ROLE db_datareader ADD MEMBER nfl_readonly;
-DENY INSERT, UPDATE, DELETE, EXECUTE TO nfl_readonly;
+DENY INSERT, UPDATE, DELETE TO nfl_readonly;
+GRANT EXECUTE ON dbo.sp_semantic_search TO nfl_readonly;  -- after 003_semantic.sql
 */
