@@ -9,12 +9,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { router } from './routes.js';
 import { requireUser, authMode } from './auth.js';
+import { assistantRouter } from './assistant/index.js';
 
 const app = express();
 app.disable('x-powered-by');
 
 app.get('/healthz', (_req, res) => { res.json({ ok: true }); });
 
+app.use('/api/ask', requireUser, assistantRouter);
 app.use('/api', requireUser, (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, router);
 app.use('/api', (_req, res) => { res.status(404).json({ error: 'unknown endpoint' }); });
 

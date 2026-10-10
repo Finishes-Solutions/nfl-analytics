@@ -16,7 +16,8 @@ export function Team({ id }: { id: number }) {
   return (
     <div className={loading ? 'loading' : ''}>
       <h1>{data.team.full_name}</h1>
-      <p className="sub">{data.team.conference} {data.team.division} · {f.season} {SEASON_TYPE_LABEL[f.seasonType].toLowerCase()}</p>
+      <p className="sub">{data.team.conference} {data.team.division} · {f.season} {SEASON_TYPE_LABEL[f.seasonType].toLowerCase()}
+        {' '}<a className="askbtn" href={href('ask', { q: `Break down the ${data.team.full_name}' ${f.season} season: what drives their record, is it sustainable (luck, one-score games, turnovers), strengths and weaknesses on both sides, and key fantasy contributors.` })}>✦ Ask about this team</a></p>
       {!s && <p className="muted">No completed games for this team in the selected season.</p>}
       {s && (
         <div className="grid g4 section">

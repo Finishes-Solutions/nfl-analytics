@@ -75,6 +75,8 @@ export function Player({ id, seasonHint }: { id: number; seasonHint?: number }) 
           {seasons.map((s) => <option key={`${s.season}:${s.season_type}`} value={`${s.season}:${s.season_type}`}>{s.season} {SEASON_TYPE_LABEL[s.season_type]}</option>)}
         </select>
         {!seasons.length && <span className="muted">No games on record.</span>}
+        <span className="grow" />
+        {sel && <a className="askbtn" href={href('ask', { q: `Analyze ${bio.first_name} ${bio.last_name}'s ${sel.season} ${sel.st === 3 ? 'postseason' : 'season'} (player_id ${id}): usage trend, consistency, how it compares to his career and to other ${bio.pos}s, and what stands out.` })}>✦ Ask about this season</a>}
       </div>
 
       {cur && (

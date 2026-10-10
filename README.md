@@ -26,6 +26,7 @@ reads Azure SQL. Freshness is decoupled from the rate limit entirely.
 │   ├── 11-testing-phases.md      Build & test everything BEFORE the $40 subscription
 │   ├── 12-azure-clickthrough.md  Azure portal setup, click by click
 │   ├── 13-dashboard-and-operations.md  Analytics views, dashboard, SQL-via-Actions, scheduled sync
+│   ├── 14-ai-assistant.md        Ask page: OpenAI / Azure OpenAI tool-calling assistant
 │   ├── system-play-sheet-v2.html Visual architecture (open in a browser)
 │   └── system-play-sheet.html    v1, kept as design changelog
 ├── sql/
@@ -51,6 +52,7 @@ reads Azure SQL. Freshness is decoupled from the rate limit entirely.
 ├── mcp-server/                   12-tool MCP server · Streamable HTTP · Entra OAuth
 │   └── src/ index.ts · tools.ts · config.ts   (works for Claude AND Copilot)
 ├── dashboard/                    Analytics dashboard: Express API + React SPA (docs/13)
+│                                 + AI assistant over the warehouse (docs/14)
 ├── samples/
 │   ├── nfl-schema-sample.xlsx    Every table as a sortable tab, fake data
 │   └── dashboard-preview.html    Original static mockup (superseded by dashboard/)
@@ -99,6 +101,7 @@ npx tsx src/embed.ts --phase all
 | Semantic layer (vector table, proc, embedder, now with game summaries) | ✅ Built |
 | MCP server (12 tools, OAuth, dual-client) | ✅ Deployed; every tool covered by integration tests |
 | Dashboard v1 (desktop, single user) | ✅ Built + tested on synthetic data; **needs an App Service** (docs/13) |
+| AI assistant (Ask page, OpenAI / Azure OpenAI) | ✅ Built + tested against a mock model; **needs a key + model setting** (docs/14) |
 | CI | ✅ Typecheck + build + SQL Server 2022 integration tests on every push |
 
 ## Honest Caveats (read before first run)

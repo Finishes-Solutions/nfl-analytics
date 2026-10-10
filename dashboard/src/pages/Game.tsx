@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { dateTime, FORMAT_LABEL, n1, pct, SEASON_TYPE_LABEL, spread, useApi, useFilters } from '../lib';
+import { dateTime, FORMAT_LABEL, href, n1, pct, SEASON_TYPE_LABEL, spread, useApi, useFilters } from '../lib';
 import type { Row } from '../types';
 import { LineChart, SERIES } from '../components/charts';
 import { Card, DataTable, ErrorBox, PlayerLink, Pos } from '../components/ui';
@@ -50,7 +50,8 @@ export function Game({ id }: { id: number }) {
   return (
     <div>
       <h1>{g.visitor_name} {g.visitor_team_score ?? ''} @ {g.home_name} {g.home_team_score ?? ''}</h1>
-      <p className="sub">{g.season} {SEASON_TYPE_LABEL[g.season_type].toLowerCase()} · week {g.week} · {dateTime(g.game_date)} · {g.venue ?? ''} · {g.status}</p>
+      <p className="sub">{g.season} {SEASON_TYPE_LABEL[g.season_type].toLowerCase()} · week {g.week} · {dateTime(g.game_date)} · {g.venue ?? ''} · {g.status}
+        {' '}<a className="askbtn" href={href('ask', { q: `Recap game ${g.game_id} (${g.visitor} at ${g.home}, ${g.season} week ${g.week}): how it was decided, key performers, and how the result compared to the betting line.` })}>✦ Ask about this game</a></p>
 
       <div className="grid g-2-1 section" style={{ alignItems: 'start' }}>
         <Card title="Home win probability" right={<span className="muted">{g.home} · from play-by-play</span>}>

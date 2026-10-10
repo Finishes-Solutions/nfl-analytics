@@ -320,3 +320,63 @@ export function divergingFill(t: number): { background: string; strong: boolean 
   const arm = c >= 0 ? 'var(--neg)' : 'var(--pos)';
   return { background: `color-mix(in oklab, ${arm} ${pctMix}%, var(--mid))`, strong: Math.abs(c) > 0.6 };
 }
+
+/* ---------------------------------------------------------------- grouped columns */
+/** Categories on x, up to 4 series side by side per category (fixed slot order). */
+export function GroupedColumns({ x, series, height = 240, yFormat = (v: number) => compact(v) }: {
+  x: string[]; series: { name: string; values: (number | null)[] }[]; height?: number; yFormat?: (v: number) => string;
+}) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [tip, setTip] = useState<Tip | null>(null);
+  const [hot, setHot] = useState<number | null>(null);
+  const m = { t: 8, r: 8, b: 22, l: 40 };
+  const iw = width - m.l - m.r, ih = height - m.t - m.b;
+  const vals = series.flatMap((s) => s.values.map((v) => v ?? 0));
+  const yt = ticks(Math.min(0, ...vals), Math.max(0.001, ...vals));
+  const y0 = yt[0], y1 = yt[yt.length - 1];
+  const sy = (v: number) => ih - ((v - y0) / (y1 - y0 || 1)) * ih;
+  const band = iw / Math.max(1, x.length);
+  const bw = Math.min(24, Math.max(3, (band - 8) / series.length - 2));
+  const groupW = series.length * (bw + 2) - 2;
+  const xEvery = Math.max(1, Math.ceil(x.length / Math.max(2, Math.floor(iw / 40))));
+  return (
+    <div className="chart" ref={ref}>
+      {series.length >= 2 && <Legend items={series.map((s, i) => ({ label: s.name, color: SERIES[i], kind: 'rect' as const }))} />}
+      <svg width={width} height={height}>
+        <g transform={`translate(${m.l},${m.t})`}>
+          {yt.map((t) => (
+            <g key={t}>
+              <line className={t === 0 ? 'baseline' : 'gridline'} x1={0} x2={iw} y1={sy(t)} y2={sy(t)} />
+              <text className="tick" x={-8} y={sy(t)} dy="0.32em" textAnchor="end">{yFormat(t)}</text>
+            </g>
+          ))}
+          {x.map((lab, i) => {
+            const gx = i * band + (band - groupW) / 2;
+            return (
+              <g key={i}>
+                {series.map((s, j) => {
+                  const v = s.values[i];
+                  if (v === null || v === undefined) return null;
+                  const top = sy(Math.max(v, 0)), bot = sy(Math.min(v, 0));
+                  const h = Math.max(1, bot - top), r = Math.min(4, h / 2, bw / 2), bx = gx + j * (bw + 2);
+                  const d = v >= 0
+                    ? `M${bx},${bot} V${top + r} Q${bx},${top} ${bx + r},${top} H${bx + bw - r} Q${bx + bw},${top} ${bx + bw},${top + r} V${bot} Z`
+                    : `M${bx},${top} V${bot - r} Q${bx},${bot} ${bx + r},${bot} H${bx + bw - r} Q${bx + bw},${bot} ${bx + bw},${bot - r} V${top} Z`;
+                  return <path key={j} d={d} fill={SERIES[j]} opacity={hot === i ? 0.8 : 1} />;
+                })}
+                {i % xEvery === 0 && <text className="tick" x={i * band + band / 2} y={ih + 15} textAnchor="middle">{lab}</text>}
+                <rect x={i * band} y={0} width={band} height={ih} fill="transparent"
+                  onPointerMove={() => { setHot(i); setTip({ x: m.l + gx + groupW, y: m.t + 10, content: (
+                    <><div className="t">{lab}</div>{series.map((s, j) => (
+                      <div className="row" key={s.name}><i className="key" style={{ background: SERIES[j] }} /><b>{s.values[i] === null ? '—' : yFormat(s.values[i] as number)}</b><span>{s.name}</span></div>
+                    ))}</>) }); }}
+                  onPointerLeave={() => { setHot(null); setTip(null); }} />
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+      <Tooltip tip={tip} width={width} />
+    </div>
+  );
+}

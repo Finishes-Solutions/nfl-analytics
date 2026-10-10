@@ -12,9 +12,10 @@ import { Games } from './pages/Games';
 import { Game } from './pages/Game';
 import { Betting } from './pages/Betting';
 import { Health } from './pages/Health';
+import { Ask } from './pages/Ask';
 
 const NAV: [string, string][] = [
-  ['overview', 'Overview'], ['players', 'Players'], ['teams', 'Teams'], ['matchups', 'Matchups'],
+  ['overview', 'Overview'], ['ask', 'Ask ✦'], ['players', 'Players'], ['teams', 'Teams'], ['matchups', 'Matchups'],
   ['games', 'Games'], ['betting', 'Betting'], ['health', 'Data health'],
 ];
 
@@ -81,6 +82,7 @@ export function App() {
           {page === 'game' && <Game id={id} />}
           {page === 'betting' && <Betting />}
           {page === 'health' && <Health />}
+          {page === 'ask' && <Ask initial={route.query.get('q') ?? undefined} />}
           {!NAV.some(([k]) => k === page) && !['player', 'team', 'game'].includes(page) && <p className="muted">Unknown page.</p>}
         </main>
       </div>
