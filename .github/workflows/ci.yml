@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Typecheck + build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [ingestion, mcp-server, dashboard]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+      - run: npm ci
+        working-directory: ${{ matrix.package }}
+      - run: npm run typecheck
+        working-directory: ${{ matrix.package }}
+      - if: matrix.package != 'ingestion'
+        run: npm run build
+        working-directory: ${{ matrix.package }}
+
+  integration:
+    name: SQL integration tests (synthetic data)
+    runs-on: ubuntu-latest
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: 'Ci_Only_Pass1!'
+        ports: ['1433:1433']
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Only_Pass1!' -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    env:
+      SQL_SERVER: localhost
+      SQL_USER: sa
+      SQL_PASSWORD: 'Ci_Only_Pass1!'
+      SQL_TRUST_CERT: 'true'
+      SQL_DATABASE: nfl_dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Install
+        run: |
+          for p in ingestion mcp-server dashboard; do (cd $p && npm ci); done
+      - name: Create database and apply schema + views
+        working-directory: ingestion
+        run: |
+          echo "IF DB_ID('nfl_dev') IS NULL CREATE DATABASE nfl_dev;" > /tmp/create.sql
+          SQL_DATABASE=master npx tsx src/run-sql.ts apply /tmp/create.sql
+          npx tsx src/run-sql.ts apply ../sql/001_schema.sql ../sql/002_views_fantasy.sql ../sql/004_analytics_views.sql
+          # second run proves every script is idempotent
+          npx tsx src/run-sql.ts apply ../sql/001_schema.sql ../sql/002_views_fantasy.sql ../sql/004_analytics_views.sql
+      - name: Load synthetic dev data
+        run: |
+          python3 tools/gen_dev_data.py > /tmp/dev_data.sql
+          (cd ingestion && npx tsx src/run-sql.ts apply /tmp/dev_data.sql)
+      - name: Data-health checks run cleanly
+        working-directory: ingestion
+        run: npx tsx src/run-sql.ts check ../sql/checks/data_health.sql > /dev/null
+      - name: Test ingestion
+        working-directory: ingestion
+        run: npm test
+      - name: Test MCP tools
+        working-directory: mcp-server
+        run: npm test
+      - name: Test dashboard API
+        working-directory: dashboard
+        run: npm test

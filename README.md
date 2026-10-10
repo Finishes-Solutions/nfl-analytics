@@ -25,13 +25,16 @@ reads Azure SQL. Freshness is decoupled from the rate limit entirely.
 │   ├── 10-copilot-agent.md       Claude + Copilot agents: tools, instructions, guardrails
 │   ├── 11-testing-phases.md      Build & test everything BEFORE the $40 subscription
 │   ├── 12-azure-clickthrough.md  Azure portal setup, click by click
+│   ├── 13-dashboard-and-operations.md  Analytics views, dashboard, SQL-via-Actions, scheduled sync
 │   ├── system-play-sheet-v2.html Visual architecture (open in a browser)
 │   └── system-play-sheet.html    v1, kept as design changelog
 ├── sql/
 │   ├── 000_seed_sample_data.sql  Stage-A fake data (matches the Excel workbook)
 │   ├── 001_schema.sql            20 tables + indexes + read-only user template
 │   ├── 002_views_fantasy.sql     5 fantasy views (3 formats, DST, matchups)
-│   └── 003_semantic.sql          Vector documents table + search procedure
+│   ├── 003_semantic.sql          Vector documents table + search procedure
+│   ├── 004_analytics_views.sql   Trends, usage share, team efficiency, betting, data health
+│   └── checks/                   Read-only reports (data_health, analytics_smoke)
 ├── ingestion/                    TypeScript · Node 20+ · mssql
 │   └── src/
 │       ├── tables.ts             ★ SINGLE SOURCE OF TRUTH for the schema
@@ -42,24 +45,33 @@ reads Azure SQL. Freshness is decoupled from the rate limit entirely.
 │       ├── probe.ts              Coverage probe (run before bulk backfill)
 │       ├── backfill.ts           Resumable historical load, 15 phases
 │       ├── sync.ts               --mode nightly | gameday
-│       ├── embed.ts              Semantic layer: player cards, plays, injuries
+│       ├── embed.ts              Semantic layer: player cards, plays, injuries, game summaries
+│       ├── run-sql.ts            Apply .sql files / print read-only reports (used by CI + Actions)
 │       └── mock-api.ts           Offline BALLDONTLIE stub for pipeline testing
-├── mcp-server/                   9-tool MCP server · Streamable HTTP · Entra OAuth
+├── mcp-server/                   12-tool MCP server · Streamable HTTP · Entra OAuth
 │   └── src/ index.ts · tools.ts · config.ts   (works for Claude AND Copilot)
+├── dashboard/                    Analytics dashboard: Express API + React SPA (docs/13)
 ├── samples/
 │   ├── nfl-schema-sample.xlsx    Every table as a sortable tab, fake data
-│   └── dashboard-preview.html    Sample dashboard interface (sortable, in-browser)
+│   └── dashboard-preview.html    Original static mockup (superseded by dashboard/)
 ├── infra/
 │   ├── provision.sh              One-shot Azure provisioning (az CLI)
 │   └── README.md                 How to run it, costs, troubleshooting, teardown
-└── tools/
-    └── gen_schema_doc.py         Regenerates docs/05 from table specs
+├── tools/
+│   ├── gen_schema_doc.py         Regenerates docs/05 from table specs
+│   └── gen_dev_data.py           Synthetic 4-season dataset for local dev + CI (dev DBs only)
+└── .github/workflows/
+    ├── ci.yml                    Typecheck all packages + SQL integration tests on SQL Server 2022
+    ├── main_app-nfl-mcp-finlabs.yml  Deploy MCP server
+    ├── dashboard-deploy.yml      Deploy dashboard (inert until configured)
+    ├── sql.yml                   Run repo SQL against prod: check (read-only) / apply
+    └── sync.yml                  Opt-in scheduled nightly + game-day sync
 ```
 
 ## Quickstart (details in docs/02)
 
 ```bash
-# 1. Azure SQL provisioned → run sql/001_schema.sql, then 002, then 003
+# 1. Azure SQL provisioned → run sql/001_schema.sql, then 002, 003, 004
 # 2. Configure
 cd ingestion && npm install && cp .env.example .env   # fill in keys
 # 3. Load history (order matters)
@@ -79,25 +91,24 @@ npx tsx src/embed.ts --phase all
 
 | Piece | State |
 |---|---|
-| Schema (20 tables) + DDL generation | ✅ Built, typechecked |
-| Ingestion: backfill / nightly / game-day | ✅ Built, **not yet run against live API** |
-| Fantasy views (3 formats, DST, matchups) | ✅ Built |
-| Semantic layer (vector table, proc, embedder) | ✅ Built |
-| MCP server (9 tools, OAuth, dual-client) | ✅ Built, typechecked |
-| Stage-A test kit (seed SQL, mock API, dashboard preview) | ✅ Built |
-| Azure provisioning (script + clickthrough guide) | ✅ Built — infra/provision.sh or docs/12 |
-| Run provisioning + staged testing | ⬜ Next — **start at docs/11**, provision via infra/ |
-| Trend views · production dashboard | ⬜ Roadmap — see docs/09 |
+| Schema (20 tables) + DDL generation | ✅ Live; CI fails if `001_schema.sql` drifts from `tables.ts` |
+| Historical backfill 2002–2026 | ✅ Per code comments (1.2M plays, validated passer ratings) — confirm with `sql/checks/data_health.sql` |
+| Ingestion: nightly / game-day | ⚠️ Code built; **scheduling is your call**: Azure Functions (docs/04) or the opt-in `sync.yml` workflow (docs/13) |
+| Fantasy views (3 formats, DST, matchups) | ✅ Built, covered by integration tests |
+| Analytics views (004): trends, usage, team efficiency, betting, data health | ✅ Built + tested; **apply to prod via the SQL workflow** |
+| Semantic layer (vector table, proc, embedder, now with game summaries) | ✅ Built |
+| MCP server (12 tools, OAuth, dual-client) | ✅ Deployed; every tool covered by integration tests |
+| Dashboard v1 (desktop, single user) | ✅ Built + tested on synthetic data; **needs an App Service** (docs/13) |
+| CI | ✅ Typecheck + build + SQL Server 2022 integration tests on every push |
 
 ## Honest Caveats (read before first run)
 
-1. **Nothing here has touched the live API yet.** Code compiles clean and the
-   logic mirrors the documented API, but expect a field-shape surprise or two
-   on first contact. `raw_json` on every row means nothing is lost while you
-   patch a column.
-2. **Historical depth is unverified** until `probe.ts` writes `coverage_map`.
-   Advanced stats can't predate player tracking (~2016); plays and team stats
-   likely have their own floors. The backfill respects the probe, not hope.
+1. **Tests run on synthetic data.** CI and the dashboard screenshots use
+   `tools/gen_dev_data.py` (invented players). Real-data checks run through
+   the `SQL (apply / check)` workflow; start with `sql/checks/data_health.sql`.
+2. **`player_season_stats` is unreliable** (NULL / wrong interceptions, NULL
+   passer rating). Views aggregate from game logs instead; the Data health
+   page quantifies the gap per season.
 3. **Player props are unrecoverable upstream** — every game-day cycle you skip
    is archive lost forever. Start the snapshot job before you care.
 4. **Fantasy scoring is ~95% fidelity** (flat FG distance, no 2-pt conversions,

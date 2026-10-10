@@ -1,0 +1,104 @@
+# Run repo SQL against the production warehouse without sharing credentials.
+#
+#   apply — runs schema/view files from sql/ (CREATE OR ALTER, idempotent)
+#   check — runs read-only report files from sql/checks/; results print in the log
+#
+# How it reaches Azure SQL: logs in to Azure (OIDC, same service principal as the
+# App Service deploy unless AZURE_CLIENT_ID is set), opens a firewall rule for
+# this runner's IP only, runs the files, and ALWAYS deletes the rule.
+# Setup: docs/13-dashboard-and-operations.md § "Giving Claude SQL access".
+name: SQL (apply / check)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'apply = schema/view changes · check = read-only reports'
+        type: choice
+        options: [check, apply]
+        default: check
+      files:
+        description: 'Space-separated paths under sql/ (apply) or sql/checks/ (check)'
+        type: string
+        default: 'sql/checks/data_health.sql'
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: sql-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ACTION: ${{ inputs.action }}
+      FILES: ${{ inputs.files }}
+      RG: ${{ vars.AZURE_SQL_RESOURCE_GROUP }}
+      SQL_SERVER_NAME: ${{ vars.AZURE_SQL_SERVER_NAME }}
+      SQL_SERVER: ${{ vars.AZURE_SQL_SERVER_NAME }}.database.windows.net
+      SQL_DATABASE: ${{ vars.AZURE_SQL_DATABASE }}
+      SQL_USER: ${{ inputs.action == 'apply' && secrets.SQL_ADMIN_USER || secrets.SQL_READONLY_USER }}
+      SQL_PASSWORD: ${{ inputs.action == 'apply' && secrets.SQL_ADMIN_PASSWORD || secrets.SQL_READONLY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          for v in RG SQL_SERVER_NAME SQL_DATABASE SQL_USER SQL_PASSWORD; do
+            [ -n "${!v}" ] || { echo "::error::$v is not configured (see docs/13)"; exit 1; }
+          done
+          for f in $FILES; do
+            if [ "$ACTION" = check ]; then pat='^sql/checks/[A-Za-z0-9_./-]+\.sql$'; else pat='^sql/[A-Za-z0-9_./-]+\.sql$'; fi
+            [[ "$f" =~ $pat ]] || { echo "::error::$f is not allowed for $ACTION"; exit 1; }
+            [[ "$f" != *..* ]] || { echo "::error::$f contains .."; exit 1; }
+            [[ "$f" != *000_seed* ]] || { echo "::error::refusing to apply sample seed data to production"; exit 1; }
+            [ -f "$f" ] || { echo "::error::$f does not exist"; exit 1; }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - run: npm ci
+        working-directory: ingestion
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID || secrets.AZUREAPPSERVICE_CLIENTID_14EA1C0932E34CD3A6326C5B4D33F1EE }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID || secrets.AZUREAPPSERVICE_TENANTID_9E90C2C0EE164458B49188BA742AA7B7 }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID || secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_262A6D6FB72C4ED59F048B0257AD1EA6 }}
+
+      - name: Open firewall for this runner
+        run: |
+          set -euo pipefail
+          IP=$(curl -fsS https://api.ipify.org)
+          echo "RULE=gh-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          az sql server firewall-rule create -g "$RG" -s "$SQL_SERVER_NAME" \
+            -n "gh-${{ github.run_id }}-${{ github.run_attempt }}" --start-ip-address "$IP" --end-ip-address "$IP" -o none
+          echo "Opened $IP"
+          sleep 20   # firewall changes take a few seconds to propagate
+
+      - name: Run SQL
+        working-directory: ingestion
+        run: |
+          set -euo pipefail
+          args=()
+          for f in $FILES; do args+=("../$f"); done
+          npx tsx src/run-sql.ts "$ACTION" "${args[@]}" | tee "$RUNNER_TEMP/sql-output.txt"
+
+      - name: Close firewall
+        if: always() && env.RULE != ''
+        run: az sql server firewall-rule delete -g "$RG" -s "$SQL_SERVER_NAME" -n "$RULE" -o none
+
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-output
+          path: ${{ runner.temp }}/sql-output.txt
+          if-no-files-found: ignore

@@ -19,14 +19,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js version
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '22.x'
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
 
-      - name: Install, build, prune to production deps
+      - name: Install, typecheck, build, prune to production deps
         working-directory: mcp-server
         run: |
-          npm install
+          npm ci
+          npm run typecheck
           npm run build
           npm prune --omit=dev
 

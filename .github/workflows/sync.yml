@@ -1,0 +1,73 @@
+# Scheduled warehouse sync on GitHub-hosted runners — an alternative to Azure
+# Functions timers. OFF by default: runs only when repo variable
+# ENABLE_SCHEDULED_SYNC is 'true', so it can't double-write alongside another
+# scheduler. Needs: BDL_API_KEY, SQL_INGEST_USER, SQL_INGEST_PASSWORD secrets and
+# the AZURE_SQL_* variables (docs/13). GitHub cron is best-effort (runs can be
+# delayed several minutes) and pauses after 60 days without repo activity.
+name: Warehouse sync
+
+on:
+  schedule:
+    - cron: '17 9 * * *'                  # nightly, ~5am US Eastern
+    - cron: '*/15 22-23 * * 4'            # Thursday night window (UTC)
+    - cron: '*/15 0-4 * * 5'
+    - cron: '*/15 16-23 * * 0'            # Sunday windows (UTC)
+    - cron: '*/15 0-4 * * 1'
+    - cron: '*/15 0-4 * * 2'              # Monday night (UTC Tuesday)
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [nightly, gameday]
+        default: nightly
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: warehouse-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: vars.ENABLE_SCHEDULED_SYNC == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      MODE: ${{ inputs.mode || (github.event.schedule == '17 9 * * *' && 'nightly' || 'gameday') }}
+      RG: ${{ vars.AZURE_SQL_RESOURCE_GROUP }}
+      SQL_SERVER_NAME: ${{ vars.AZURE_SQL_SERVER_NAME }}
+      SQL_SERVER: ${{ vars.AZURE_SQL_SERVER_NAME }}.database.windows.net
+      SQL_DATABASE: ${{ vars.AZURE_SQL_DATABASE }}
+      SQL_USER: ${{ secrets.SQL_INGEST_USER }}
+      SQL_PASSWORD: ${{ secrets.SQL_INGEST_PASSWORD }}
+      BDL_API_KEY: ${{ secrets.BDL_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: ingestion/package-lock.json
+      - run: npm ci
+        working-directory: ingestion
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID || secrets.AZUREAPPSERVICE_CLIENTID_14EA1C0932E34CD3A6326C5B4D33F1EE }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID || secrets.AZUREAPPSERVICE_TENANTID_9E90C2C0EE164458B49188BA742AA7B7 }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID || secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_262A6D6FB72C4ED59F048B0257AD1EA6 }}
+      - name: Open firewall for this runner
+        run: |
+          set -euo pipefail
+          IP=$(curl -fsS https://api.ipify.org)
+          echo "RULE=gh-sync-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          az sql server firewall-rule create -g "$RG" -s "$SQL_SERVER_NAME" \
+            -n "gh-sync-${{ github.run_id }}-${{ github.run_attempt }}" --start-ip-address "$IP" --end-ip-address "$IP" -o none
+          sleep 20
+      - name: Sync (${{ env.MODE }})
+        working-directory: ingestion
+        run: npx tsx src/sync.ts --mode "$MODE"
+      - name: Close firewall
+        if: always() && env.RULE != ''
+        run: az sql server firewall-rule delete -g "$RG" -s "$SQL_SERVER_NAME" -n "$RULE" -o none

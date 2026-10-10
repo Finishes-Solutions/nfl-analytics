@@ -51,7 +51,7 @@ One OAuth implementation therefore serves both clients — build once, two agent
 Give Copilot **named tools, not raw SQL**. Copilot Studio's orchestration is
 noticeably more reliable picking from well-described tools than composing SQL,
 and a readonly user + fixed queries means a bad model turn can't produce a bad
-join, a table scan, or a write. Nine tools:
+join, a table scan, or a write. Nine core tools (three more were added later: `get_advanced_stats`, `get_league_standings`, `search_plays`; twelve in total):
 
 | Tool | Inputs | Returns | Backed by |
 |---|---|---|---|

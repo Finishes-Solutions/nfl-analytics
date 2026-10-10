@@ -1,0 +1,44 @@
+# Deploys dashboard/ to its own Azure App Service (Linux, Node 22).
+# Inert until configured: set repo variable DASHBOARD_APP_NAME and secret
+# AZURE_DASHBOARD_PUBLISH_PROFILE (App Service → Download publish profile).
+# See docs/13-dashboard-and-operations.md.
+name: Deploy dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/dashboard-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: vars.DASHBOARD_APP_NAME != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install, typecheck, build, prune
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+          npm prune --omit=dev
+      - name: Package
+        run: |
+          mkdir -p /tmp/pkg
+          cp -r dashboard/dist dashboard/node_modules dashboard/package.json /tmp/pkg/
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.DASHBOARD_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_DASHBOARD_PUBLISH_PROFILE }}
+          package: /tmp/pkg

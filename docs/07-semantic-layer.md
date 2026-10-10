@@ -13,7 +13,7 @@ the same database as the stats (Azure SQL native VECTOR, GA).
 | `player_card` | composed narrative per player-season from your own views | raw stat rows embed into noise; composed text embeds *meaning* |
 | `play` | `plays.text`, **filtered**: scoring plays + 3rd/4th downs | routine plays are near-identical text that bloats the index |
 | `injury` | latest comment per player | free text already |
-| `game_summary` | (future) composed recap per game | narrative search over games |
+| `game_summary` | composed recap per completed game: final, margin/shape, comeback, quarter flow, each side's top fantasy performer (`embed.ts --phase game_summaries`) | narrative search over games ("comeback wins", "shootouts") |
 
 Not embedded: any purely numeric table. That's what the SQL tools are for.
 

@@ -27,7 +27,7 @@ GRANT EXECUTE ON dbo.sp_semantic_search TO nfl_readonly;  -- after 003
 
 ## 3. Run the SQL, in order
 
-`sql/001_schema.sql` → `sql/002_views_fantasy.sql` → `sql/003_semantic.sql`
+`sql/001_schema.sql` → `sql/002_views_fantasy.sql` → `sql/003_semantic.sql` → `sql/004_analytics_views.sql`
 All idempotent; re-running is safe. (Views will exist but return nothing until backfill.)
 
 ## 4. Configure ingestion

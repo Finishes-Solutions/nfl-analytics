@@ -5,7 +5,14 @@ Provision → run SQL → backfill → probe → full load → validate leaderbo
 (docs/02–03). Start game-day snapshots immediately — the props archive begins
 the day you do.
 
-## Next: trend views (002b)
+## Done (Oct 2026): analytics views + dashboard v1
+`sql/004_analytics_views.sql` (rolling form, usage share, YoY deltas, team
+efficiency, Pythagorean luck, one-score records, line/prop results, data
+health) and `dashboard/` on App Service (docs/13). Remaining from the list
+below: snap share and red-zone usage need per-play player attribution, which
+the API doesn't provide (`plays` has no player_id).
+
+## Next: trend views (002b) — mostly shipped in 004
 Rolling 3/6-game fp vs season baseline · usage share (target/carry share from
 team context) · season-over-season deltas · regression flags (Pythagorean wins,
 turnover-differential reversion, one-score-game records). All views, zero

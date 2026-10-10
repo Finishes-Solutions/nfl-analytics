@@ -10,7 +10,9 @@
     "sync:nightly": "tsx src/sync.ts --mode nightly",
     "sync:gameday": "tsx src/sync.ts --mode gameday",
     "typecheck": "tsc --noEmit",
-    "embed": "tsx src/embed.ts"
+    "embed": "tsx src/embed.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "sql": "tsx src/run-sql.ts"
   },
   "keywords": [],
   "author": "",

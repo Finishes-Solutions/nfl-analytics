@@ -12,7 +12,7 @@ No external fantasy service exists anywhere in the system. Change a rule in
 | `v_player_fantasy_season` | player / season / type | totals, per-game, **stdev / floor / ceiling** (boom-bust profile) |
 | `v_dst_fantasy_game` | team / game | DST scoring via the opponent-row trick |
 | `v_dst_fantasy_season` | team / season / type | DST aggregates |
-| `v_fantasy_points_allowed` | defense / position / season | matchup difficulty — first feature of any projection model |
+| `v_fantasy_points_allowed` | defense / position / season | matchup difficulty in all three formats — first feature of any projection model |
 
 ## Scoring rules (defaults)
 

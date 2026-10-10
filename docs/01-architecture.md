@@ -46,6 +46,6 @@ v1: client polls your API every 10–20 s. v2: ingestion publishes "game N updat
 | Principal | Rights | Used by |
 |---|---|---|
 | nfl_ingest | db_datareader + db_datawriter | ingestion functions only |
-| nfl_readonly | db_datareader, DENY INSERT/UPDATE/DELETE/EXECUTE* | MCP server, dashboard API |
+| nfl_readonly | db_datareader, DENY INSERT/UPDATE/DELETE* | MCP server, dashboard API |
 
-\* Grant EXECUTE only on `sp_semantic_search` for the MCP user.
+\* Grant EXECUTE only on `sp_semantic_search`. Do **not** DENY EXECUTE database-wide: a database-level DENY overrides that object GRANT and breaks semantic_search.
